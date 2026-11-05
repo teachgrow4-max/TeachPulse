@@ -149,18 +149,18 @@ sequenceDiagram
 
 | Layer | Rule | Notes |
 |---|---|---|
-| **GPS** | Haversine distance ≤ `geofence_radius_m` (default 100). Reject if `accuracy > max_accuracy_m`. Reject if the fix is older than `max_fix_age_s` or in the future relative to server time. | Radius and thresholds are admin-configurable. Distance is stored for every attempt. The client `mocked` flag (Android) is recorded as a signal, **not** relied on. |
-| **Office network** | `req.ip` must match an active `office_networks` CIDR. | Express `trust proxy` is set to an explicit hop count or CIDR list from env. `X-Forwarded-For` is never read directly. |
-| **QR** | Random 256-bit token, stored **hashed**, TTL = rotation interval (30–60 s, configurable) plus small boundary grace. Consumption is an atomic `INSERT … ON CONFLICT DO NOTHING` / `UPDATE … RETURNING`. | See decision D1 below. |
-| **Device** | Device must be registered, not revoked, and attestation must verify. | See §6.3. |
+| **GPS** | Haversine distance ≤ `geofence_radius_m` (default 100). Reject if `accuracy > max_accuracy_m`. Reject if the fix is older than `max_fix_age_s` or in the future relative to server time. | Radius and thresholds are admin-configurable. Distance is stored for every attempt. A reading the device flags as `mocked` is rejected, but the flag is cooperative: its absence proves nothing, which is why GPS is only one of four layers. |
+| **Office network** | `req.ip` must match an active `office_networks` CIDR. | Express `trust proxy` is set to an explicit hop count or CIDR list from env. `X-Forwarded-For` is never read directly. Tests prove forged forwarding headers are ignored. |
+| **QR** | A 256-bit code derived per rotation window with HMAC-SHA256 from `QR_SIGNING_SECRET`, so no plaintext is stored; only its **SHA-256** is kept, once somebody scans it. Window = rotation interval (30 s default), accepted 5 s early and 10 s late. Consumption is one `ACCEPTED` scan per employee, enforced by a unique index. | See decision D1 below and [VERIFICATION.md](VERIFICATION.md). |
+| **Device** | Device must be registered, approved, not revoked, and must sign a fresh single-use challenge with its own key. | See §6.3. |
 
 `FINAL_RESULT = VERIFIED` only if **every layer required for that channel** passes. Required layers per channel (web vs mobile) are policy configuration. Every attempt, pass or fail, is written to `attendance_verifications`, and there is no code path that skips this.
 
 ### 6.3 Device identity
 
-- **Native (Expo):** app-generated device key stored in SecureStore, plus **Play Integrity** (Android) and **App Attest** (iOS) verified server-side. These require a custom dev build and external accounts (Google Cloud project, Apple Developer Program). They do not work in Expo Go.
-- **Web:** browser fingerprints are not identity. Proposal: bind the registered "device" to a **WebAuthn platform credential (passkey)**. Check-in then needs a signed assertion from a hardware-backed key. If the company prefers not to do this, the alternative is a *documented per-channel policy* that marks the device layer `NOT_REQUIRED (web)` in the verification record. It is never silently skipped.
-- **Registration is gated.** Password re-authentication plus either an admin-issued one-time enrollment code or admin approval. There is a per-employee device cap. Admins can revoke at any time, and revocation is effective on the next request.
+- **Native (Expo):** an app-generated ECDSA P-256 key held in the device's key store, which signs a server challenge for every check-in (**implemented in Phase 5**). **Play Integrity** (Android) and **App Attest** (iOS) are meant to add proof of a genuine app build; they need a custom dev build and external accounts (Google Cloud project, Apple Developer Program), and do not work in Expo Go. They are **not implemented yet**: the `AttestationVerifier` interface exists, native registrations are recorded with provider `NONE`, and the real verifiers arrive with the mobile app in Phase 9.
+- **Web:** browser fingerprints are not identity. The registered "device" is a **WebAuthn platform credential (passkey)** with user verification required (**implemented in Phase 5**), so each check-in needs a signed assertion from a key held by the machine. A passkey the platform syncs between a person's devices is not tied to one machine; this is recorded at registration for the approving administrator. If the company prefers not to do this, the alternative is a *documented per-channel policy* that marks the device layer `NOT_REQUIRED (web)` in the verification record. It is never silently skipped.
+- **Registration is gated.** Password re-authentication (with the sign-in lockout) plus admin approval; a new device stays `PENDING` until approved. There is a per-employee device cap (policy setting, default 2). Employees can remove their own devices and admins can revoke any, and revocation is effective on the next request. The full design is in [VERIFICATION.md](VERIFICATION.md).
 
 ### 6.4 Admin "Test office configuration"
 

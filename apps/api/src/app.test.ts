@@ -12,6 +12,7 @@ const baseEnv = {
   SUPABASE_URL: 'http://127.0.0.1:54421',
   SUPABASE_ANON_KEY: 'anon',
   SUPABASE_SERVICE_ROLE_KEY: 'service',
+  QR_SIGNING_SECRET: 'qr-signing-secret-for-tests-0123456789abcdef',
   CORS_ORIGINS: 'http://localhost:5173',
 };
 

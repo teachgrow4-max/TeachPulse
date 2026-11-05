@@ -65,11 +65,11 @@ Exit: you approve ARCHITECTURE.md + this plan and answer (or accept defaults for
 - **Tests:** login success/failure, lockout, deactivated user rejected, role enforcement, token tampering and forgery, CSRF, log hygiene.
 - **Not yet verified against a real Supabase Auth server** (Docker could not start on the development machine). Run the auth flows against the real stack before go-live.
 
-### Phase 5 — Office verification and QR infrastructure
+### Phase 5 — Office verification and QR infrastructure — **done** (see [VERIFICATION.md](VERIFICATION.md) and [the report](phase-reports/PHASE-5.md))
 - Office settings + networks CRUD (admin), CIDR matching in SQL, trust-proxy hardening with tests that spoofed `X-Forwarded-For` is ignored.
 - Haversine + accuracy/staleness checks; `attendance_verifications` recording.
 - QR service: generation, hashed storage, rotation with grace window, per-employee consumption (D1), cleanup job. `GET /api/office/qr/current` for `office_display`.
-- Device registration (gated), revocation, attestation verifier interfaces (Play Integrity / App Attest / WebAuthn per D2).
+- Device registration (gated), revocation, attestation verifier interfaces (Play Integrity / App Attest / WebAuthn per D2). **Built:** app-key and WebAuthn proofs and the `AttestationVerifier` seam. **Deferred to Phase 9:** the Play Integrity and App Attest verifiers themselves (they need the real app build and vendor accounts); native devices are recorded with attestation `NONE` until then.
 - Central `verifyPresence()` + `POST /attendance/verify`, `POST /office/qr/verify`, `POST /admin/office/test`.
 - **Tests (unit):** Haversine known distances, accuracy/stale rejection, QR expiry/replay, CIDR v4/v6. **(integration):** every layer pass/fail combination, spoofed header, revoked device.
 

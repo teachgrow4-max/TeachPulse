@@ -2,7 +2,7 @@
 
 Employees mark attendance only after the server verifies they are physically at the TeachGrow office (GPS geofence + office network + rotating QR + registered device). Web (employee + admin) and mobile share one API, one database and one set of business rules.
 
-**Status:** Phase 4 of 12 complete (database, RLS, attendance engine, authentication, roles and employee administration). The office-verification engine, the user interfaces and everything after them are not built yet. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
+**Status:** Phase 5 of 12 complete (database, RLS, attendance engine, authentication, roles and employee administration, and the four-layer office-verification engine). The check-in/out and break endpoints, the user interfaces and everything after them are not built yet. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
 
 ## Layout
 
@@ -40,6 +40,7 @@ npm run test:integration -w @teachgrow/api      # database + HTTP tests on embed
 
 - [Architecture](docs/ARCHITECTURE.md) — design decisions and security model
 - [Authentication guide](docs/AUTH.md) — sessions, roles, CSRF, lockout, client contracts, limits
+- [Office verification](docs/VERIFICATION.md) — GPS, office network, rotating QR and device layers; what each does and does not prove
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md) — phases, open decisions, external prerequisites
 - [Database reference](docs/DATABASE.md) — migrations, functions, conventions, how to test
-- Phase reports: [Phase 3](docs/phase-reports/PHASE-3.md), [Phase 4](docs/phase-reports/PHASE-4.md)
+- Phase reports: [Phase 3](docs/phase-reports/PHASE-3.md), [Phase 4](docs/phase-reports/PHASE-4.md), [Phase 5](docs/phase-reports/PHASE-5.md)

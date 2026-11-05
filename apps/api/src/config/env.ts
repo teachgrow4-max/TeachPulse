@@ -62,7 +62,16 @@ const envSchema = z
     /** Override the expected `iss` claim (defaults to `<SUPABASE_URL>/auth/v1`). */
     JWT_ISSUER: z.string().min(1).optional(),
 
+    /**
+     * Secret that makes the rotating office QR codes unforgeable (HMAC key). At least 32 characters,
+     * random, server-only. Changing it simply invalidates the codes currently on screen.
+     */
+    QR_SIGNING_SECRET: z.string().min(32),
+
     CORS_ORIGINS: originList,
+    /** WebAuthn relying-party id: the web app's domain. Defaults to the first CORS origin's host. */
+    WEBAUTHN_RP_ID: z.string().min(1).max(253).optional(),
+    WEBAUTHN_RP_NAME: z.string().min(1).max(100).default('TeachGrow Attendance'),
     TRUST_PROXY: z.string().optional(),
     /** Per client IP, all routes. High on purpose: a whole office can share one public IP. */
     RATE_LIMIT_GLOBAL_PER_MIN: z.coerce.number().int().min(1).max(100_000).default(1000),
@@ -113,15 +122,26 @@ const envSchema = z
       if (!env.SUPABASE_URL.startsWith('https://') && !isLocalUrl(env.SUPABASE_URL)) {
         fail('SUPABASE_URL', 'must use https:// in production');
       }
+      // The template ships a placeholder that is long enough to pass the length check, and it is
+      // public. Anyone who knew it could mint office QR codes.
+      if (/replace-with|changeme|change-me|your-secret/i.test(env.QR_SIGNING_SECRET)) {
+        fail(
+          'QR_SIGNING_SECRET',
+          'still has the placeholder from .env.example; generate a real one',
+        );
+      }
     }
   })
   .transform((env) => {
     const base = env.SUPABASE_URL.replace(/\/+$/, '');
+    const firstOrigin = env.CORS_ORIGINS[0];
     return {
       ...env,
       AUTH_COOKIE_SECURE: env.AUTH_COOKIE_SECURE ?? env.NODE_ENV === 'production',
       JWT_ISSUER: env.JWT_ISSUER ?? `${base}/auth/v1`,
       SUPABASE_JWKS_URL: env.SUPABASE_JWKS_URL ?? `${base}/auth/v1/.well-known/jwks.json`,
+      WEBAUTHN_RP_ID:
+        env.WEBAUTHN_RP_ID ?? (firstOrigin ? new URL(firstOrigin).hostname : 'localhost'),
     };
   });
 

@@ -14,6 +14,7 @@ Source of truth: `supabase/migrations/*.sql`, applied in filename order. The beh
 | `20261105000600_reference_data_and_schedules.sql` | roles and the initial policy; `pg_cron` jobs when the extension exists                                                  |
 | `20261105000700_auth_support.sql`             | `profiles.must_change_password`; lockout lookup index on `audit_logs`; hard-delete guard on `profiles`; **last-administrator trigger** (advisory-locked) |
 | `20261105000800_active_user_rls.sql`          | `private.is_active_user()`; own-row policies now also require an **active** profile, so deactivation applies to the Data API and Realtime immediately |
+| `20261105000900_office_verification.sql`      | QR scan outcome `VALID`; `attendance_policies.max_devices_per_employee`; unique live WebAuthn credential; **`device_challenges`** (single-use, API-only); retention now also purges spent challenges |
 
 ## Conventions
 

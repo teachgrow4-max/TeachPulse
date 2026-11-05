@@ -6,6 +6,7 @@ const valid = {
   SUPABASE_URL: 'http://127.0.0.1:54421',
   SUPABASE_ANON_KEY: 'anon-key-value',
   SUPABASE_SERVICE_ROLE_KEY: 'service-role-secret-value',
+  QR_SIGNING_SECRET: 'qr-signing-secret-for-tests-0123456789abcdef',
 };
 
 describe('loadEnv', () => {
@@ -88,6 +89,17 @@ describe('loadEnv', () => {
 
     it('requires at least one CORS origin', () => {
       expect(() => loadEnv({ ...prod, CORS_ORIGINS: '' })).toThrow(/CORS_ORIGINS/);
+    });
+
+    it('refuses the placeholder QR signing secret from .env.example', () => {
+      const placeholder = 'replace-with-a-long-random-secret-of-at-least-32-characters';
+      expect(() => loadEnv({ ...prod, QR_SIGNING_SECRET: placeholder })).toThrow(
+        /QR_SIGNING_SECRET/,
+      );
+      // ...but it is only a development convenience: other environments still boot with it.
+      expect(loadEnv({ ...valid, QR_SIGNING_SECRET: placeholder }).QR_SIGNING_SECRET).toBe(
+        placeholder,
+      );
     });
 
     it('requires TLS for a remote database', () => {

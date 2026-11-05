@@ -53,6 +53,13 @@ export const ERROR_STATUS = {
   VERIFICATION_FAILED: 422,
   DEVICE_NOT_ACTIVE: 403,
 
+  // devices
+  CHALLENGE_INVALID: 422,
+  CHALLENGE_EXPIRED: 422,
+  DEVICE_PROOF_INVALID: 422,
+  DEVICE_LIMIT_REACHED: 409,
+  DEVICE_ALREADY_REGISTERED: 409,
+
   // corrections
   CORRECTION_INVALID: 422,
   CORRECTION_ALREADY_DECIDED: 409,
@@ -102,6 +109,13 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   VERIFICATION_USED: 'This office verification has already been used. Please verify again.',
   VERIFICATION_FAILED: 'Office verification failed.',
   DEVICE_NOT_ACTIVE: 'This device is not registered or has been revoked.',
+
+  CHALLENGE_INVALID: 'This security check is not valid. Please start again.',
+  CHALLENGE_EXPIRED: 'This security check has expired. Please start again.',
+  DEVICE_PROOF_INVALID: 'This device could not prove its identity.',
+  DEVICE_LIMIT_REACHED:
+    'You have reached the maximum number of devices. Remove one before adding another.',
+  DEVICE_ALREADY_REGISTERED: 'This device is already registered.',
 
   CORRECTION_INVALID: 'The requested correction is not valid.',
   CORRECTION_ALREADY_DECIDED: 'This correction request has already been decided.',

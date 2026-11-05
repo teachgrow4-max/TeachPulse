@@ -7,7 +7,13 @@ import { createTokenVerifier, type TokenVerifier } from './auth/token-verifier.j
 import { parseTrustProxy } from './config/trust-proxy.js';
 import type { Env } from './config/env.js';
 import type { Db } from './db/pool.js';
+import { noAttestation, type AttestationVerifier } from './devices/attestation.js';
+import { DeviceService } from './devices/service.js';
+import { WebAuthnVerifier } from './devices/webauthn.js';
 import { EmployeeService } from './employees/service.js';
+import { OfficeService } from './office/service.js';
+import { QrService } from './verification/qr-service.js';
+import { VerificationService } from './verification/service.js';
 import type { Clock } from './lib/clock.js';
 import type { Logger } from './lib/logger.js';
 import { createAuthMiddleware } from './middleware/authenticate.js';
@@ -16,8 +22,11 @@ import { createRateLimiter, wasFailedAttempt } from './middleware/rate-limit.js'
 import { requestId } from './middleware/request-id.js';
 import { corsPolicy, noStore, securityHeaders } from './middleware/security.js';
 import { adminRouter } from './routes/admin.js';
+import { attendanceRouter } from './routes/attendance.js';
 import { authRouter } from './routes/auth.js';
+import { devicesRouter } from './routes/devices.js';
 import { healthRouter } from './routes/health.js';
+import { officeRouter } from './routes/office.js';
 
 export interface AppDeps {
   env: Env;
@@ -28,11 +37,21 @@ export interface AppDeps {
   gateway?: AuthGateway;
   /** Defaults to verifying Supabase tokens against the configured secret / JWKS. */
   verifier?: TokenVerifier;
+  /** Platform integrity checks for native apps. Defaults to none (see devices/attestation.ts). */
+  attestation?: AttestationVerifier;
 }
 
 const FIFTEEN_MINUTES = 15 * 60_000;
 
-export function createApp({ env, logger, db, clock, gateway, verifier }: AppDeps): Express {
+export function createApp({
+  env,
+  logger,
+  db,
+  clock,
+  gateway,
+  verifier,
+  attestation,
+}: AppDeps): Express {
   const app = express();
 
   const authGateway =
@@ -64,6 +83,21 @@ export function createApp({ env, logger, db, clock, gateway, verifier }: AppDeps
     },
   });
   const employeeService = new EmployeeService({ db, gateway: authGateway, clock, logger });
+  const officeService = new OfficeService({ db, clock });
+  const qrService = new QrService({ db, clock, secret: env.QR_SIGNING_SECRET });
+  const webauthn = new WebAuthnVerifier({
+    rpId: env.WEBAUTHN_RP_ID,
+    rpName: env.WEBAUTHN_RP_NAME,
+    origins: env.CORS_ORIGINS,
+  });
+  const deviceService = new DeviceService({
+    db,
+    clock,
+    passwords: authService,
+    webauthn,
+    attestation: attestation ?? noAttestation,
+  });
+  const verificationService = new VerificationService({ db, clock, qr: qrService, webauthn });
 
   /** Per signed-in person; falls back to the client IP if (unexpectedly) unauthenticated. */
   const perUser = (req: Request): string => req.auth?.userId ?? ipKeyGenerator(req.ip ?? '');
@@ -129,6 +163,54 @@ export function createApp({ env, logger, db, clock, gateway, verifier }: AppDeps
     adminRouter({
       auth,
       employees: employeeService,
+      office: officeService,
+      devices: deviceService,
+      userLimiter: createRateLimiter({
+        windowMs: 60_000,
+        limit: env.USER_RATE_LIMIT_PER_MIN,
+        keyGenerator: perUser,
+      }),
+    }),
+  );
+
+  app.use(
+    '/api/devices',
+    devicesRouter({
+      auth,
+      devices: deviceService,
+      userLimiter: createRateLimiter({
+        windowMs: 60_000,
+        limit: env.USER_RATE_LIMIT_PER_MIN,
+        keyGenerator: perUser,
+      }),
+      registrationLimiter: createRateLimiter({
+        windowMs: FIFTEEN_MINUTES,
+        limit: 20,
+        keyGenerator: perUser,
+      }),
+    }),
+  );
+
+  app.use(
+    '/api/attendance',
+    attendanceRouter({
+      auth,
+      verification: verificationService,
+      devices: deviceService,
+      userLimiter: createRateLimiter({
+        windowMs: 60_000,
+        limit: env.USER_RATE_LIMIT_PER_MIN,
+        keyGenerator: perUser,
+      }),
+      verifyLimiter: createRateLimiter({ windowMs: 60_000, limit: 30, keyGenerator: perUser }),
+    }),
+  );
+
+  app.use(
+    '/api/office',
+    officeRouter({
+      auth,
+      qr: qrService,
       userLimiter: createRateLimiter({
         windowMs: 60_000,
         limit: env.USER_RATE_LIMIT_PER_MIN,

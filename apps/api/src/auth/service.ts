@@ -8,7 +8,7 @@ import type { Logger } from '../lib/logger.js';
 import type { RequestMeta } from '../lib/request-meta.js';
 import type { AuthContext } from './context.js';
 import { AuthGatewayError, type AuthGateway, type GatewaySession } from './gateway.js';
-import { loadIdentity, toAuthUserDto } from './identity.js';
+import { loadIdentity, toAuthUserDto, type Identity } from './identity.js';
 import { checkLockout, subjectHashOf, type LockoutPolicy } from './lockout.js';
 import { revokeSession, revokeUserSessions } from './sessions.js';
 import { TokenError, type TokenVerifier, type VerifiedToken } from './token-verifier.js';
@@ -206,18 +206,23 @@ export class AuthService {
   // Change password
   // ---------------------------------------------------------------------------------------
 
-  async changePassword(
-    auth: AuthContext,
-    input: { currentPassword: string; newPassword: string },
+  /**
+   * Proves the signed-in person knows their password right now ("sudo mode"), for actions where a
+   * stolen access token must not be enough: changing the password, enrolling a new device.
+   *
+   * It shares the sign-in lockout and failure trail, so these endpoints cannot be used as an
+   * unlimited password-guessing oracle. Leaves no session behind.
+   */
+  async confirmPassword(
+    identity: Identity,
+    password: string,
     meta: RequestMeta,
+    purpose: 'change_password' | 'device_registration',
   ): Promise<void> {
     const { db, gateway, verifier, clock, lockout, logger } = this.deps;
     const now = clock.now();
-    const { identity } = auth;
     const subjectHash = subjectHashOf(identity.email);
 
-    // The same lockout protects the current-password check: a stolen access token must not turn
-    // this endpoint into an unlimited password-guessing oracle.
     const lock = await checkLockout(db, subjectHash, now, lockout);
     if (lock.locked) {
       await writeAudit(db, {
@@ -225,7 +230,7 @@ export class AuthService {
         actorId: identity.id,
         metadata: {
           subject_hash: subjectHash,
-          context: 'change_password',
+          context: purpose,
           retry_after_seconds: lock.retryAfterSeconds,
         },
         ...meta,
@@ -236,7 +241,7 @@ export class AuthService {
 
     let proof: GatewaySession;
     try {
-      proof = await gateway.signInWithPassword(identity.email, input.currentPassword);
+      proof = await gateway.signInWithPassword(identity.email, password);
     } catch (error) {
       const translated = await this.translateCredentialError(error, {
         email: identity.email,
@@ -252,7 +257,7 @@ export class AuthService {
       throw translated;
     }
 
-    // Proving the current password created a throw-away session; remove it again.
+    // Proving the password created a throw-away session; remove it again.
     try {
       const proofToken = await verifier.verify(proof.accessToken);
       await revokeSession(db, proofToken.sessionId);
@@ -260,6 +265,18 @@ export class AuthService {
       logger.warn({ err: error }, 'could not clean up the password re-check session');
       await this.revokeUnverified(proof.accessToken);
     }
+  }
+
+  async changePassword(
+    auth: AuthContext,
+    input: { currentPassword: string; newPassword: string },
+    meta: RequestMeta,
+  ): Promise<void> {
+    const { db, gateway, clock } = this.deps;
+    const now = clock.now();
+    const { identity } = auth;
+
+    await this.confirmPassword(identity, input.currentPassword, meta, 'change_password');
 
     try {
       await gateway.updatePassword(identity.id, input.newPassword);

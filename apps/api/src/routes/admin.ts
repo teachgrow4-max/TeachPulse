@@ -6,13 +6,20 @@ import {
   updateEmployeeSchema,
   uuidSchema,
 } from '@teachgrow/shared';
+import type { DeviceService } from '../devices/service.js';
 import type { EmployeeService } from '../employees/service.js';
+import type { OfficeService } from '../office/service.js';
 import { requestMeta } from '../lib/request-meta.js';
 import type { AuthMiddleware } from '../middleware/authenticate.js';
+import { adminDevicesRouter } from './admin-devices.js';
+import { adminOfficeRouter } from './admin-office.js';
+import { actorOf } from './helpers.js';
 
 export interface AdminRouterDeps {
   auth: AuthMiddleware;
   employees: EmployeeService;
+  office: OfficeService;
+  devices: DeviceService;
   userLimiter: RequestHandler;
 }
 
@@ -21,15 +28,13 @@ export interface AdminRouterDeps {
  * active account, no pending forced password change) and `requireRole('admin')`.
  */
 export function adminRouter(deps: AdminRouterDeps): Router {
-  const { auth, employees } = deps;
+  const { auth, employees, office, devices } = deps;
   const router = Router();
 
   router.use(auth.authenticate(), auth.requireRole('admin'), deps.userLimiter);
 
-  const actorOf = (req: Parameters<RequestHandler>[0]) => ({
-    id: req.auth!.userId,
-    role: req.auth!.identity.role,
-  });
+  router.use('/office', adminOfficeRouter({ office }));
+  router.use('/devices', adminDevicesRouter({ devices }));
 
   // ---- departments ---------------------------------------------------------------------
   router.get('/departments', async (_req, res) => {

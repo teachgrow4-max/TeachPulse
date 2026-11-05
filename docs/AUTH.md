@@ -67,7 +67,7 @@ The check runs before any password is checked or token used. `SameSite` is an ad
 
 | Control | Default | Behaviour |
 | --- | --- | --- |
-| Account lockout | 5 failures / 15 min (`LOGIN_MAX_FAILURES`, `LOGIN_LOCKOUT_MINUTES`) | Counts failures since the last success, derived from the audit log (durable, shared by all instances). Unlocks by itself. Attempts while locked are logged as `auth.login.blocked` and are **not** counted, so a lock cannot be extended. Unknown emails lock identically, so lockout cannot reveal which accounts exist. The change-password current-password check shares the same lock. |
+| Account lockout | 5 failures / 15 min (`LOGIN_MAX_FAILURES`, `LOGIN_LOCKOUT_MINUTES`) | Counts failures since the last success, derived from the audit log (durable, shared by all instances). Unlocks by itself. Attempts while locked are logged as `auth.login.blocked` and are **not** counted, so a lock cannot be extended. Unknown emails lock identically, so lockout cannot reveal which accounts exist. The password re-checks for change-password and for **enrolling a device** (`POST /api/devices/register`, see [VERIFICATION.md](VERIFICATION.md)) share the same lock, via `AuthService.confirmPassword`. |
 | Per-IP failed sign-ins | 30 / 15 min (`LOGIN_IP_FAILURE_LIMIT`) | Counts only genuine credential failures: successes, malformed requests and CSRF rejections never count (so an office behind one public IP is safe, and a hostile web page cannot burn a visitor's budget). |
 | Per-IP failed refreshes | 10x the above | Requests with no token never count. |
 | Per signed-in user | 240 / min (`USER_RATE_LIMIT_PER_MIN`) | Keyed by user id, not IP. |

@@ -43,6 +43,7 @@ const SUPPORTING_TABLES = [
   'departments',
   'leave_records',
   'qr_scan_events',
+  'device_challenges',
   'checkout_exceptions',
   'idempotency_keys',
   'push_subscriptions',
