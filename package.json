@@ -1,0 +1,37 @@
+{
+  "name": "teachgrow-attendance",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TeachGrow Attendance Management System",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:shared": "npm run build -w @teachgrow/shared",
+    "build": "npm run build:shared && npm run build -w @teachgrow/api",
+    "dev:api": "npm run build:shared && npm run dev -w @teachgrow/api",
+    "typecheck": "npm run build:shared && npm run typecheck -w @teachgrow/api",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "npm run build:shared && npm run test -w @teachgrow/shared && npm run test -w @teachgrow/api",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:reset": "supabase db reset",
+    "db:test": "supabase test db"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "globals": "^16.0.0",
+    "prettier": "^3.0.0",
+    "supabase": "^2.0.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}
