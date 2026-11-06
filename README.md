@@ -36,6 +36,20 @@ npm run test:integration -w @teachgrow/api      # database + HTTP tests on embed
 3. Create the first administrator, once: `npm run bootstrap:admin -w @teachgrow/api` (see [docs/AUTH.md](docs/AUTH.md)).
 4. `npm run dev:api`
 
+## Hosting the API
+
+The repository root is the project root (it is an npm workspace), so a host must install, build and start from the root:
+
+| Setting       | Value |
+| ------------- | ----- |
+| Node.js       | 22 or newer |
+| Install       | `npm install`. The root `.npmrc` keeps the build tools (TypeScript and the type packages) installed even when the host sets `NODE_ENV=production`, which would otherwise skip them and fail the build with "tsc: command not found" |
+| Build command | `npm run build` (the shared package, then the API) |
+| Start command | `npm start`, which runs `apps/api/dist/server.js`. Use that file if the host asks for an entry file |
+| Environment   | `NODE_ENV=production` plus every variable in `apps/api/.env.example`, set in the host's dashboard. The process refuses to boot on a missing or unsafe value and names it |
+
+The API needs a Postgres/Supabase project it can reach. A host that only builds and publishes static files has nothing to serve yet: the web and mobile apps arrive in Phases 7 and 9.
+
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) — design decisions and security model
