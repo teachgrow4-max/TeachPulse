@@ -69,6 +69,69 @@ describe('loadEnv', () => {
     expect(() => loadEnv({ ...valid, TRUST_PROXY: '0.0.0.0/0' })).toThrow(/TRUST_PROXY/);
   });
 
+  describe('DB_SSL_CA (the database certificate authority)', () => {
+    const pem =
+      '-----BEGIN CERTIFICATE-----\nMIIBszCCAVmgAwIBAgIUTESTONLYNOTAREALCERTIFICATE\n-----END CERTIFICATE-----';
+    const tls = { ...valid, DB_SSL: 'true' };
+
+    it('is unset by default', () => {
+      expect(loadEnv(valid).DB_SSL_CA).toBeUndefined();
+      expect(loadEnv(tls).DB_SSL_CA).toBeUndefined();
+    });
+
+    it('accepts PEM text', () => {
+      expect(loadEnv({ ...tls, DB_SSL_CA: pem }).DB_SSL_CA).toBe(pem);
+    });
+
+    it('accepts one line with literal \\n in place of line breaks (a host dashboard field)', () => {
+      const oneLine = pem.replaceAll('\n', '\\n');
+      expect(oneLine).not.toContain('\n');
+      expect(loadEnv({ ...tls, DB_SSL_CA: oneLine }).DB_SSL_CA).toBe(pem);
+    });
+
+    it('accepts a chain of several certificates', () => {
+      const chain = `${pem}\n${pem}`;
+      expect(loadEnv({ ...tls, DB_SSL_CA: chain }).DB_SSL_CA).toBe(chain);
+    });
+
+    it('treats a blank value as unset, like an empty line in a .env file', () => {
+      expect(loadEnv({ ...tls, DB_SSL_CA: '' }).DB_SSL_CA).toBeUndefined();
+      expect(loadEnv({ ...tls, DB_SSL_CA: '   ' }).DB_SSL_CA).toBeUndefined();
+      // ...which also means a blank value is fine when TLS is off.
+      expect(loadEnv({ ...valid, DB_SSL_CA: '' }).DB_SSL_CA).toBeUndefined();
+    });
+
+    it('rejects text that is not a certificate, and never echoes it', () => {
+      for (const bad of ['hunter2-not-a-certificate', '-----BEGIN CERTIFICATE-----', 'MIIBsz']) {
+        try {
+          loadEnv({ ...tls, DB_SSL_CA: bad });
+          expect.unreachable('loadEnv should have thrown');
+        } catch (error) {
+          expect(error).toBeInstanceOf(EnvError);
+          expect((error as Error).message).toContain('DB_SSL_CA');
+          expect((error as Error).message).not.toContain('hunter2');
+        }
+      }
+    });
+
+    it('refuses a certificate authority when TLS is off, because it would silently do nothing', () => {
+      expect(() => loadEnv({ ...valid, DB_SSL: 'false', DB_SSL_CA: pem })).toThrow(/DB_SSL_CA/);
+    });
+
+    it('works in production together with TLS', () => {
+      const env = loadEnv({
+        ...tls,
+        NODE_ENV: 'production',
+        TRUST_PROXY: '1',
+        CORS_ORIGINS: 'https://app.example.com',
+        DATABASE_URL: 'postgresql://u:p@aws-0-ap-south-1.pooler.supabase.com:5432/postgres',
+        DB_SSL_CA: pem,
+      });
+      expect(env.DB_SSL).toBe(true);
+      expect(env.DB_SSL_CA).toBe(pem);
+    });
+  });
+
   describe('production hardening', () => {
     const prod = {
       ...valid,

@@ -47,6 +47,7 @@ The repository root is the project root (it is an npm workspace), so a host must
 | Build command | `npm run build` (the shared package, then the API) |
 | Start command | `npm start`, which runs `apps/api/dist/server.js`. Use that file if the host asks for an entry file |
 | Environment   | `NODE_ENV=production` plus every variable in `apps/api/.env.example`, set in the host's dashboard. The process refuses to boot on a missing or unsafe value and names it |
+| Database      | For Supabase use the **Session pooler** connection string (IPv4) as `DATABASE_URL`, `DB_SSL=true`, and paste Supabase's database certificate (dashboard, Project Settings, Database, SSL Configuration) into `DB_SSL_CA`. Apply the migrations from a clean checkout of `main` before first use. `GET /api/health/ready` answers 200 only when the database connection works |
 
 The API needs a Postgres/Supabase project it can reach. A host that only builds and publishes static files has nothing to serve yet: the web and mobile apps arrive in Phases 7 and 9.
 

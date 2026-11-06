@@ -25,7 +25,8 @@ vi.mock('pg', () => ({
   },
 }));
 
-const { createDb } = await import('./pool.js');
+const { default: pg } = await import('pg');
+const { createDb, sslOptions } = await import('./pool.js');
 const { createLogger } = await import('../lib/logger.js');
 
 const db = createDb(
@@ -73,6 +74,40 @@ describe('withTransaction', () => {
       }),
     ).rejects.toBe(boom);
     expect(calls.at(-1)).toBe('RELEASE');
+  });
+});
+
+describe('TLS to the database', () => {
+  const ca = '-----BEGIN CERTIFICATE-----\nTESTONLY\n-----END CERTIFICATE-----';
+  const logger = createLogger({ LOG_LEVEL: 'silent', NODE_ENV: 'test' });
+
+  it('does not use TLS at all unless DB_SSL is set', () => {
+    expect(sslOptions({ DB_SSL: false })).toBeUndefined();
+    expect(sslOptions({ DB_SSL: false, DB_SSL_CA: ca })).toBeUndefined();
+  });
+
+  it('verifies the server certificate whenever TLS is on', () => {
+    expect(sslOptions({ DB_SSL: true })).toEqual({ rejectUnauthorized: true });
+  });
+
+  it('trusts only the supplied authority, and still verifies', () => {
+    expect(sslOptions({ DB_SSL: true, DB_SSL_CA: ca })).toEqual({ rejectUnauthorized: true, ca });
+  });
+
+  it('never turns verification off, whatever is configured', () => {
+    for (const env of [{ DB_SSL: true }, { DB_SSL: true, DB_SSL_CA: ca }] as const) {
+      expect(sslOptions(env)).toMatchObject({ rejectUnauthorized: true });
+    }
+  });
+
+  it('hands those settings to the connection pool', () => {
+    createDb(
+      { DATABASE_URL: 'postgresql://x', DB_SSL: true, DB_SSL_CA: ca, DB_POOL_MAX: 2 },
+      logger,
+    );
+    expect(pg.Pool).toHaveBeenLastCalledWith(
+      expect.objectContaining({ ssl: { rejectUnauthorized: true, ca } }),
+    );
   });
 });
 
