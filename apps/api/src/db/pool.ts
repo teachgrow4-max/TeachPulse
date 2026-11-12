@@ -32,8 +32,23 @@ export interface Db extends Queryable {
   end(): Promise<void>;
 }
 
+/** What the TLS settings need from the environment; the certificate authority is optional. */
+type TlsEnv = Pick<Env, 'DB_SSL'> & { DB_SSL_CA?: string | undefined };
+
+/**
+ * TLS settings for the database connection. Verification is never switched off. When the server's
+ * certificate comes from a private authority (Supabase's does), that authority's certificate is
+ * supplied in DB_SSL_CA and becomes the only one trusted for this connection.
+ */
+export function sslOptions(env: TlsEnv): pg.PoolConfig['ssl'] {
+  if (!env.DB_SSL) return undefined;
+  return env.DB_SSL_CA
+    ? { rejectUnauthorized: true, ca: env.DB_SSL_CA }
+    : { rejectUnauthorized: true };
+}
+
 export function createDb(
-  env: Pick<Env, 'DATABASE_URL' | 'DB_SSL' | 'DB_POOL_MAX'>,
+  env: Pick<Env, 'DATABASE_URL' | 'DB_SSL' | 'DB_POOL_MAX'> & TlsEnv,
   logger: Logger,
 ): Db {
   const pool = new Pool({
@@ -45,7 +60,7 @@ export function createDb(
     statement_timeout: 15_000,
     idle_in_transaction_session_timeout: 15_000,
     application_name: 'teachgrow-api',
-    ssl: env.DB_SSL ? { rejectUnauthorized: true } : undefined,
+    ssl: sslOptions(env),
   });
 
   // An idle client erroring (e.g. the DB restarted) must not crash the process.

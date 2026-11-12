@@ -14,6 +14,7 @@
   "scripts": {
     "build:shared": "npm run build -w @teachgrow/shared",
     "build": "npm run build:shared && npm run build -w @teachgrow/api",
+    "start": "npm run start -w @teachgrow/api",
     "dev:api": "npm run build:shared && npm run dev -w @teachgrow/api",
     "typecheck": "npm run build:shared && npm run typecheck -w @teachgrow/api",
     "lint": "eslint .",

@@ -51,6 +51,21 @@ npm run dev -w @teachgrow/web                   # http://localhost:5173 (proxies
 
 The demo prints the sign-in details. It is for trying things out only: never point it at real data.
 
+## Hosting the API
+
+The repository root is the project root (it is an npm workspace), so a host must install, build and start from the root:
+
+| Setting       | Value |
+| ------------- | ----- |
+| Node.js       | 22 or newer |
+| Install       | `npm install`. The root `.npmrc` keeps the build tools (TypeScript and the type packages) installed even when the host sets `NODE_ENV=production`, which would otherwise skip them and fail the build with "tsc: command not found" |
+| Build command | `npm run build` (the shared package, then the API) |
+| Start command | `npm start`, which runs `apps/api/dist/server.js`. Use that file if the host asks for an entry file |
+| Environment   | `NODE_ENV=production` plus every variable in `apps/api/.env.example`, set in the host's dashboard. The process refuses to boot on a missing or unsafe value and names it |
+| Database      | For Supabase use the **Session pooler** connection string (IPv4) as `DATABASE_URL`, `DB_SSL=true`, and paste Supabase's database certificate (dashboard, Project Settings, Database, SSL Configuration) into `DB_SSL_CA`. Apply the migrations from a clean checkout of `main` before first use. `GET /api/health/ready` answers 200 only when the database connection works |
+
+The API needs a Postgres/Supabase project it can reach. The web app is a static build: `npm run build -w @teachgrow/web` writes `apps/web/dist`. Serve it from the same site as the API, over https and with the headers listed in [docs/ADMIN_QR_ATTENDANCE.md](docs/ADMIN_QR_ATTENDANCE.md) (the browser only allows the camera and location on secure pages). The rest of the web app and the mobile app arrive in Phases 7 to 9.
+
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) — design decisions and security model

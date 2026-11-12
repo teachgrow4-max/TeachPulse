@@ -34,6 +34,24 @@ const originList = z
     ),
   );
 
+/**
+ * PEM text of one or more certificates. Pasted into a host's dashboard it usually has to fit on a
+ * single line, so a literal `\n` is accepted in place of a line break. A blank value means "unset".
+ */
+const pemCertificates = z
+  .string()
+  .optional()
+  .transform((value) => {
+    const text = value?.replace(/\\n/g, '\n').trim();
+    return text ? text : undefined;
+  })
+  .refine(
+    (value) =>
+      value === undefined ||
+      /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/.test(value),
+    'must be PEM text containing a certificate (it starts with -----BEGIN CERTIFICATE-----)',
+  );
+
 const isLocalUrl = (value: string): boolean =>
   /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(value);
 
@@ -50,6 +68,13 @@ const envSchema = z
       .min(1)
       .refine((value) => /^postgres(ql)?:\/\//.test(value), 'must be a postgres:// connection URL'),
     DB_SSL: booleanString,
+    /**
+     * The certificate authority that signed the database's TLS certificate. The API always verifies
+     * the server's certificate. Supabase signs with its own authority, which Node does not know, so
+     * without this the connection is refused ("self-signed certificate in certificate chain").
+     * It is a public certificate, not a secret.
+     */
+    DB_SSL_CA: pemCertificates,
     DB_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
 
     SUPABASE_URL: z.url(),
@@ -106,6 +131,10 @@ const envSchema = z
       parseTrustProxy(env.TRUST_PROXY);
     } catch (error) {
       fail('TRUST_PROXY', error instanceof Error ? error.message : 'invalid');
+    }
+
+    if (env.DB_SSL_CA !== undefined && !env.DB_SSL) {
+      fail('DB_SSL_CA', 'has no effect unless DB_SSL is true');
     }
 
     if (env.AUTH_COOKIE_SAMESITE === 'none' && env.AUTH_COOKIE_SECURE === false) {
