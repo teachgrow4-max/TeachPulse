@@ -34,11 +34,26 @@ export interface Actor {
   role: RoleName;
 }
 
+/**
+ * Gives a new account its personal QR code. Optional: the first-administrator script runs without
+ * the QR secret, and such an account simply gets its code the first time anybody asks for it.
+ */
+export interface EmployeeQrIssuer {
+  issueFirstCode(
+    tx: Queryable,
+    employeeId: string,
+    actor: Actor | null,
+    meta: RequestMeta,
+    at: Date,
+  ): Promise<boolean>;
+}
+
 export interface EmployeeServiceDeps {
   db: Db;
   gateway: AuthGateway;
   clock: Clock;
   logger: Logger;
+  qr?: EmployeeQrIssuer;
 }
 
 export interface CreateOptions {
@@ -167,6 +182,11 @@ export class EmployeeService {
           ],
         );
         const created = (await loadIdentityById(tx, authUserId))!;
+        // The personal QR code is created in the same transaction as the account, so there is
+        // never an employee without one (the office display screen has no ID card).
+        if (!isDisplay) {
+          await this.deps.qr?.issueFirstCode(tx, authUserId, actor, meta, clock.now());
+        }
         await writeAudit(tx, {
           action: options.auditAction ?? 'employee.create',
           actorId: actor?.id ?? null,

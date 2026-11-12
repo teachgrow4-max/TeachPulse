@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import {
+  ATTENDANCE_VERIFICATION_PURPOSES,
   DEVICE_PLATFORMS,
   DEVICE_STATUSES,
-  VERIFICATION_PURPOSES,
   type DevicePlatform,
   type DeviceStatus,
 } from './enums.js';
@@ -92,7 +92,7 @@ export type RegisterDeviceInput = z.output<typeof registerDeviceRequestSchema>;
 /** Ask for a one-time challenge to prove a registered device during a check-in or check-out. */
 export const attendanceChallengeRequestSchema = z.strictObject({
   deviceId: uuidSchema,
-  purpose: z.enum(VERIFICATION_PURPOSES),
+  purpose: z.enum(ATTENDANCE_VERIFICATION_PURPOSES),
 });
 
 export const revokeDeviceRequestSchema = z.strictObject({

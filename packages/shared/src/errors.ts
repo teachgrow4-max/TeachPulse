@@ -45,6 +45,17 @@ export const ERROR_STATUS = {
   BREAK_TYPE_MISMATCH: 409,
   SHORT_BREAK_LIMIT: 422,
 
+  // employee QR codes and admin-operated scanning
+  EMPLOYEE_QR_INVALID: 422,
+  EMPLOYEE_QR_REVOKED: 422,
+  EMPLOYEE_INACTIVE: 422,
+  ATTENDANCE_NOT_TRACKED: 422,
+  SCAN_EXPIRED: 422,
+  SCAN_ALREADY_RECORDED: 409,
+  SCAN_NOT_ACTIONABLE: 409,
+  SCAN_ACTION_MISMATCH: 409,
+  SELF_SCAN_FORBIDDEN: 403,
+
   // verification
   VERIFICATION_REQUIRED: 422,
   VERIFICATION_INVALID: 422,
@@ -59,6 +70,9 @@ export const ERROR_STATUS = {
   DEVICE_PROOF_INVALID: 422,
   DEVICE_LIMIT_REACHED: 409,
   DEVICE_ALREADY_REGISTERED: 409,
+
+  // idempotency
+  IDEMPOTENCY_KEY_REUSED: 422,
 
   // corrections
   CORRECTION_INVALID: 422,
@@ -103,6 +117,19 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   BREAK_TYPE_MISMATCH: 'This is a different type of break from the one that is running.',
   SHORT_BREAK_LIMIT: 'You have reached the maximum number of short breaks for today.',
 
+  EMPLOYEE_QR_INVALID:
+    'This QR code is not recognised. Ask the employee to show their TeachGrow ID code.',
+  EMPLOYEE_QR_REVOKED:
+    'This QR code has been revoked and can no longer be used. The employee needs a new one from HR.',
+  EMPLOYEE_INACTIVE: 'This employee’s account is inactive, so attendance cannot be recorded.',
+  ATTENDANCE_NOT_TRACKED: 'Attendance is not tracked for this account.',
+  SCAN_EXPIRED: 'This scan has expired. Scan the code again.',
+  SCAN_ALREADY_RECORDED: 'Attendance for this scan has already been recorded.',
+  SCAN_NOT_ACTIONABLE: 'There is nothing to record for this scan.',
+  SCAN_ACTION_MISMATCH: 'That action no longer matches this scan. Scan the code again.',
+  SELF_SCAN_FORBIDDEN:
+    'You cannot record your own attendance with the scanner. Ask another operator or an administrator to scan your code.',
+
   VERIFICATION_REQUIRED: 'Verify that you are at the office first.',
   VERIFICATION_INVALID: 'This office verification is not valid. Please verify again.',
   VERIFICATION_EXPIRED: 'Your office verification has expired. Please verify again.',
@@ -116,6 +143,9 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   DEVICE_LIMIT_REACHED:
     'You have reached the maximum number of devices. Remove one before adding another.',
   DEVICE_ALREADY_REGISTERED: 'This device is already registered.',
+
+  IDEMPOTENCY_KEY_REUSED:
+    'This Idempotency-Key was already used for a different request. Use a new key for a new action.',
 
   CORRECTION_INVALID: 'The requested correction is not valid.',
   CORRECTION_ALREADY_DECIDED: 'This correction request has already been decided.',

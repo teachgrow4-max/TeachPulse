@@ -49,6 +49,8 @@ const SUPPORTING_TABLES = [
   'push_subscriptions',
   'notifications',
   'announcements',
+  'employee_qr_codes',
+  'qr_scan_logs',
 ];
 
 async function publicTables(): Promise<string[]> {

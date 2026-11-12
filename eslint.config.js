@@ -15,6 +15,11 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    // The web app runs in a browser.
+    files: ['apps/web/**/*.{ts,tsx}'],
+    languageOptions: { globals: { ...globals.browser } },
+  },
+  {
     languageOptions: { globals: { ...globals.node } },
     rules: {
       '@typescript-eslint/no-unused-vars': [

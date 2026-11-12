@@ -7,6 +7,7 @@ const valid = {
   SUPABASE_ANON_KEY: 'anon-key-value',
   SUPABASE_SERVICE_ROLE_KEY: 'service-role-secret-value',
   QR_SIGNING_SECRET: 'qr-signing-secret-for-tests-0123456789abcdef',
+  EMPLOYEE_QR_SECRET: 'employee-qr-secret-for-tests-0123456789abcdef',
 };
 
 describe('loadEnv', () => {
@@ -99,6 +100,30 @@ describe('loadEnv', () => {
       // ...but it is only a development convenience: other environments still boot with it.
       expect(loadEnv({ ...valid, QR_SIGNING_SECRET: placeholder }).QR_SIGNING_SECRET).toBe(
         placeholder,
+      );
+    });
+
+    it('refuses the placeholder employee QR secret from .env.example', () => {
+      const placeholder = 'replace-with-another-long-random-secret-of-at-least-32-characters';
+      expect(() => loadEnv({ ...prod, EMPLOYEE_QR_SECRET: placeholder })).toThrow(
+        /EMPLOYEE_QR_SECRET/,
+      );
+      expect(loadEnv({ ...valid, EMPLOYEE_QR_SECRET: placeholder }).EMPLOYEE_QR_SECRET).toBe(
+        placeholder,
+      );
+    });
+
+    it('refuses to reuse the lobby QR secret for employee codes in production', () => {
+      expect(() => loadEnv({ ...prod, EMPLOYEE_QR_SECRET: prod.QR_SIGNING_SECRET })).toThrow(
+        /EMPLOYEE_QR_SECRET.*differ/,
+      );
+    });
+
+    it('requires an employee QR secret of at least 32 characters', () => {
+      const { EMPLOYEE_QR_SECRET: _omitted, ...without } = valid;
+      expect(() => loadEnv(without)).toThrow(/EMPLOYEE_QR_SECRET/);
+      expect(() => loadEnv({ ...valid, EMPLOYEE_QR_SECRET: 'too-short' })).toThrow(
+        /EMPLOYEE_QR_SECRET/,
       );
     });
 

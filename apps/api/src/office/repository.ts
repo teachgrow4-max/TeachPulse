@@ -88,6 +88,8 @@ export interface PolicyRow {
   checkInLayersWeb: VerificationLayer[];
   checkInLayersMobile: VerificationLayer[];
   checkOutLayers: VerificationLayer[];
+  /** What the person operating the QR attendance scanner must prove about their OWN presence. */
+  adminScanLayers: VerificationLayer[];
   verificationTtlSeconds: number;
   maxDevicesPerEmployee: number;
 }
@@ -99,6 +101,7 @@ export async function loadPolicyAt(q: Queryable, at: Date, timezone: string): Pr
     web: VerificationLayer[];
     mobile: VerificationLayer[];
     checkout: VerificationLayer[];
+    admin_scan: VerificationLayer[];
     ttl: number;
     max_devices: number;
   }>(
@@ -106,6 +109,7 @@ export async function loadPolicyAt(q: Queryable, at: Date, timezone: string): Pr
             check_in_layers_web::text[]    as web,
             check_in_layers_mobile::text[] as mobile,
             check_out_layers::text[]       as checkout,
+            admin_scan_layers::text[]      as admin_scan,
             verification_ttl_seconds       as ttl,
             max_devices_per_employee       as max_devices
      from public.attendance_policies
@@ -121,6 +125,7 @@ export async function loadPolicyAt(q: Queryable, at: Date, timezone: string): Pr
     checkInLayersWeb: row.web,
     checkInLayersMobile: row.mobile,
     checkOutLayers: row.checkout,
+    adminScanLayers: row.admin_scan,
     verificationTtlSeconds: row.ttl,
     maxDevicesPerEmployee: row.max_devices,
   };

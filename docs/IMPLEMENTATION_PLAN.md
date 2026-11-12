@@ -78,6 +78,7 @@ Exit: you approve ARCHITECTURE.md + this plan and answer (or accept defaults for
 - **Tests (unit):** status calc incl. exact 10:19:59 / 10:20:00 boundary, net hours, break math, DST-free Asia/Kolkata date rollover near midnight. **(integration):** duplicate check-in → 409, concurrent check-ins (race), checkout during break, idempotent retry, employee data isolation.
 
 ### Phase 7 — Employee web dashboard
+- **Started early:** the web app shell (sign-in, forced password change, profile with the employee's QR code and ID-card download, the administrator's QR scanner and QR management) arrived with the admin-operated QR attendance feature; see [ADMIN_QR_ATTENDANCE.md](ADMIN_QR_ATTENDANCE.md). The design tokens, API client with token renewal, and UI primitives there are the base for the rest of this phase and Phase 8.
 - Vite app shell, design system (tokens, shadcn components, badges, skeletons, empty/error states), employee layout, dashboard with live counter, verify → check-in → check-out flow with confirmation, breaks, history (daily/weekly/monthly calendar), profile, correction request.
 - Location-permission explainer shown *before* the OS prompt. QR scan via browser camera.
 - **Tests:** component tests; Playwright for the employee flows.

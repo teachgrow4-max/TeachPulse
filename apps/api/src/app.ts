@@ -10,8 +10,10 @@ import type { Db } from './db/pool.js';
 import { noAttestation, type AttestationVerifier } from './devices/attestation.js';
 import { DeviceService } from './devices/service.js';
 import { WebAuthnVerifier } from './devices/webauthn.js';
+import { EmployeeQrService } from './employee-qr/service.js';
 import { EmployeeService } from './employees/service.js';
 import { OfficeService } from './office/service.js';
+import { QrAttendanceService } from './qr-attendance/service.js';
 import { QrService } from './verification/qr-service.js';
 import { VerificationService } from './verification/service.js';
 import type { Clock } from './lib/clock.js';
@@ -25,8 +27,10 @@ import { adminRouter } from './routes/admin.js';
 import { attendanceRouter } from './routes/attendance.js';
 import { authRouter } from './routes/auth.js';
 import { devicesRouter } from './routes/devices.js';
+import { employeeQrRouter } from './routes/employee-qr.js';
 import { healthRouter } from './routes/health.js';
 import { officeRouter } from './routes/office.js';
+import { qrAttendanceRouter } from './routes/qr-attendance.js';
 
 export interface AppDeps {
   env: Env;
@@ -82,7 +86,14 @@ export function createApp({
       windowSeconds: env.LOGIN_LOCKOUT_MINUTES * 60,
     },
   });
-  const employeeService = new EmployeeService({ db, gateway: authGateway, clock, logger });
+  const employeeQrService = new EmployeeQrService({ db, clock, secret: env.EMPLOYEE_QR_SECRET });
+  const employeeService = new EmployeeService({
+    db,
+    gateway: authGateway,
+    clock,
+    logger,
+    qr: employeeQrService,
+  });
   const officeService = new OfficeService({ db, clock });
   const qrService = new QrService({ db, clock, secret: env.QR_SIGNING_SECRET });
   const webauthn = new WebAuthnVerifier({
@@ -98,6 +109,12 @@ export function createApp({
     attestation: attestation ?? noAttestation,
   });
   const verificationService = new VerificationService({ db, clock, qr: qrService, webauthn });
+  const qrAttendanceService = new QrAttendanceService({
+    db,
+    clock,
+    qr: employeeQrService,
+    verification: verificationService,
+  });
 
   /** Per signed-in person; falls back to the client IP if (unexpectedly) unauthenticated. */
   const perUser = (req: Request): string => req.auth?.userId ?? ipKeyGenerator(req.ip ?? '');
@@ -165,11 +182,42 @@ export function createApp({
       employees: employeeService,
       office: officeService,
       devices: deviceService,
+      employeeQr: employeeQrService,
+      qrAttendance: qrAttendanceService,
       userLimiter: createRateLimiter({
         windowMs: 60_000,
         limit: env.USER_RATE_LIMIT_PER_MIN,
         keyGenerator: perUser,
       }),
+    }),
+  );
+
+  app.use(
+    '/api/employee-qr',
+    employeeQrRouter({
+      auth,
+      qr: employeeQrService,
+      userLimiter: createRateLimiter({
+        windowMs: 60_000,
+        limit: env.USER_RATE_LIMIT_PER_MIN,
+        keyGenerator: perUser,
+      }),
+    }),
+  );
+
+  app.use(
+    '/api/qr-attendance',
+    qrAttendanceRouter({
+      auth,
+      scanner: qrAttendanceService,
+      devices: deviceService,
+      userLimiter: createRateLimiter({
+        windowMs: 60_000,
+        limit: env.USER_RATE_LIMIT_PER_MIN,
+        keyGenerator: perUser,
+      }),
+      scanLimiter: createRateLimiter({ windowMs: 60_000, limit: 120, keyGenerator: perUser }),
+      verifyLimiter: createRateLimiter({ windowMs: 60_000, limit: 30, keyGenerator: perUser }),
     }),
   );
 

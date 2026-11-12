@@ -6,8 +6,19 @@
  * so a drift fails CI rather than production.
  */
 
-export const ROLE_NAMES = ['employee', 'admin', 'office_display'] as const;
+export const ROLE_NAMES = ['employee', 'admin', 'office_display', 'attendance_operator'] as const;
 export type RoleName = (typeof ROLE_NAMES)[number];
+
+/** Who may operate the QR attendance scanner (administrators and designated operators). */
+export const SCANNER_ROLES = [
+  'admin',
+  'attendance_operator',
+] as const satisfies readonly RoleName[];
+export type ScannerRole = (typeof SCANNER_ROLES)[number];
+
+export function isScannerRole(role: RoleName): role is ScannerRole {
+  return (SCANNER_ROLES as readonly RoleName[]).includes(role);
+}
 
 /** Outcome classification for a work day. `PRESENT`/`LATE` describe arrival. */
 export const ATTENDANCE_STATUSES = [
@@ -62,8 +73,21 @@ export type LayerResult = (typeof LAYER_RESULTS)[number];
 export const VERIFICATION_RESULTS = ['VERIFIED', 'REJECTED'] as const;
 export type VerificationResult = (typeof VERIFICATION_RESULTS)[number];
 
-export const VERIFICATION_PURPOSES = ['CHECK_IN', 'CHECK_OUT'] as const;
+/**
+ * What a verification is FOR. ADMIN_SCAN is the proof that the person operating the QR scanner is
+ * at the office; it is only ever requested by the scanner endpoints, never by an employee marking
+ * their own attendance (see {@link ATTENDANCE_VERIFICATION_PURPOSES}). Same order as the database.
+ */
+export const VERIFICATION_PURPOSES = ['CHECK_IN', 'CHECK_OUT', 'ADMIN_SCAN'] as const;
 export type VerificationPurpose = (typeof VERIFICATION_PURPOSES)[number];
+
+/** The purposes an employee may ask for when marking their OWN attendance. */
+export const ATTENDANCE_VERIFICATION_PURPOSES = ['CHECK_IN', 'CHECK_OUT'] as const;
+export type AttendanceVerificationPurpose = (typeof ATTENDANCE_VERIFICATION_PURPOSES)[number];
+
+/** Where an attendance event came from (`attendance_events.source`). */
+export const ATTENDANCE_EVENT_SOURCES = ['EMPLOYEE', 'ADMIN', 'SYSTEM', 'ADMIN_QR'] as const;
+export type AttendanceEventSource = (typeof ATTENDANCE_EVENT_SOURCES)[number];
 
 export const CHANNELS = ['WEB', 'MOBILE'] as const;
 export type Channel = (typeof CHANNELS)[number];

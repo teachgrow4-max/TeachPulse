@@ -5,8 +5,8 @@ import {
   type VerificationLayer,
   type VerificationLayers,
   type VerificationReasonDto,
+  type VerificationRequest,
   type VerifyFailureDetails,
-  type VerifyRequestBody,
   type VerifyResponse,
 } from '@teachgrow/shared';
 import type { Identity } from '../auth/identity.js';
@@ -46,9 +46,13 @@ export interface VerificationServiceDeps {
 }
 
 export interface VerifyInput {
-  /** An employee whose attendance is tracked (the route guarantees it). */
+  /**
+   * Whose presence is being proved. For CHECK_IN / CHECK_OUT an employee whose attendance is
+   * tracked; for ADMIN_SCAN the administrator or operator holding the QR scanner. The route
+   * guarantees whichever applies.
+   */
   identity: Identity;
-  request: VerifyRequestBody;
+  request: VerificationRequest;
   /** The caller's address as Express resolved it (`req.ip`), already normalised. */
   ip: string | null;
   meta: RequestMeta;
@@ -62,15 +66,17 @@ const ALWAYS_REQUIRED: readonly VerificationLayer[] = MANDATORY_CHECK_IN_LAYERS;
 
 export function requiredLayers(
   policy: PolicyRow,
-  purpose: VerifyRequestBody['purpose'],
-  channel: VerifyRequestBody['channel'],
+  purpose: VerificationRequest['purpose'],
+  channel: VerificationRequest['channel'],
 ): Set<VerificationLayer> {
   const configured =
-    purpose === 'CHECK_OUT'
-      ? policy.checkOutLayers
-      : channel === 'WEB'
-        ? policy.checkInLayersWeb
-        : policy.checkInLayersMobile;
+    purpose === 'ADMIN_SCAN'
+      ? policy.adminScanLayers
+      : purpose === 'CHECK_OUT'
+        ? policy.checkOutLayers
+        : channel === 'WEB'
+          ? policy.checkInLayersWeb
+          : policy.checkInLayersMobile;
   return new Set<VerificationLayer>([...configured, ...ALWAYS_REQUIRED]);
 }
 

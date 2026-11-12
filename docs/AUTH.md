@@ -90,6 +90,7 @@ Every API call checks that the token's `session_id` still exists in `auth.sessio
 | --- | --- |
 | `employee` | Mark own attendance and view own history. |
 | `admin` | Everything under `/api/admin/*`. May also be an attendance-tracked employee. |
+| `attendance_operator` | Front-desk account: scans employees' QR codes and records attendance (`/api/qr-attendance/*`, see [ADMIN_QR_ATTENDANCE.md](ADMIN_QR_ATTENDANCE.md)). Cannot see employee lists, other people's codes, reports or settings. Its own attendance may be tracked. |
 | `office_display` | Least-privilege kiosk identity for the lobby QR screen. Cannot be tracked for attendance, and its type cannot be changed to or from another role. |
 
 Safeguards: an administrator cannot demote or deactivate themselves; a database trigger refuses to remove the last active administrator; profiles are never hard-deleted.

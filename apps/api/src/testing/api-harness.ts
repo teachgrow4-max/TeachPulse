@@ -26,6 +26,9 @@ export const DEFAULT_PASSWORD = 'Str0ng-Passw0rd!';
 /** The QR signing secret the test app is configured with (tests derive real codes from it). */
 export const QR_TEST_SECRET = 'qr-signing-secret-for-tests-0123456789abcdef';
 
+/** The secret behind employees' personal QR codes in the test app (tests derive real codes from it). */
+export const EMPLOYEE_QR_TEST_SECRET = 'employee-qr-secret-for-tests-0123456789abcdef';
+
 export interface ApiHarness {
   testDb: TestDb;
   db: Db;
@@ -76,6 +79,7 @@ export function useApi(options: UseApiOptions = {}): ApiHarness {
         SUPABASE_ANON_KEY: fake.anonKey,
         SUPABASE_SERVICE_ROLE_KEY: fake.serviceRoleKey,
         QR_SIGNING_SECRET: QR_TEST_SECRET,
+        EMPLOYEE_QR_SECRET: EMPLOYEE_QR_TEST_SECRET,
         ...(fake.hs256Secret ? { SUPABASE_JWT_SECRET: fake.hs256Secret } : {}),
         CORS_ORIGINS: WEB_ORIGIN,
         ...options.env,

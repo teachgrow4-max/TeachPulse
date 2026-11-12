@@ -1,0 +1,282 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens. Colours are semantic (surface, fg, brand, success ...) and switch with the
+ * person's light / dark setting, so components never need `dark:` variants. Every text colour here
+ * has at least 4.5:1 contrast against the surface it is used on.
+ */
+:root {
+  color-scheme: light;
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --surface-2: #f1f5f9;
+  --fg: #0f172a;
+  --muted: #5b6b82;
+  --line: #dde3ec;
+  --ring: #0f766e;
+  --brand: #0f766e;
+  --brand-fg: #ffffff;
+  --brand-soft: #d9f5f0;
+  --success: #166534;
+  --success-soft: #dcfce7;
+  --success-solid: #15803d;
+  --warning: #92400e;
+  --warning-soft: #fef3c7;
+  --warning-solid: #b45309;
+  --danger: #b91c1c;
+  --danger-soft: #fee2e2;
+  --danger-solid: #b91c1c;
+  --info: #075985;
+  --info-soft: #e0f2fe;
+  --info-solid: #0369a1;
+  --stage: #020617;
+  /* Text on a solid success / warning / danger button. */
+  --on-solid: #ffffff;
+  --shadow: 0 1px 2px rgb(15 23 42 / 0.06), 0 8px 24px -12px rgb(15 23 42 / 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #0a0f1c;
+    --surface: #111a2e;
+    --surface-2: #17223b;
+    --fg: #e6edf7;
+    --muted: #97a8c2;
+    --line: #25334f;
+    --ring: #2dd4bf;
+    --brand: #2dd4bf;
+    --brand-fg: #042f2e;
+    --brand-soft: #0b3a3a;
+    --success: #86efac;
+    --success-soft: #0d3320;
+    --success-solid: #22c55e;
+    --warning: #fcd34d;
+    --warning-soft: #3a2a07;
+    --warning-solid: #f59e0b;
+    --danger: #fca5a5;
+    --danger-soft: #451a1a;
+    --danger-solid: #ef4444;
+    --info: #7dd3fc;
+    --info-soft: #0b2f46;
+    --info-solid: #38bdf8;
+    --stage: #020617;
+    --on-solid: #06101f;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6);
+  }
+}
+
+@theme inline {
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-ring: var(--ring);
+  --color-brand: var(--brand);
+  --color-brand-fg: var(--brand-fg);
+  --color-brand-soft: var(--brand-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-success-solid: var(--success-solid);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-solid: var(--warning-solid);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-solid: var(--danger-solid);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-info-solid: var(--info-solid);
+  --color-stage: var(--stage);
+  --color-on-solid: var(--on-solid);
+  --shadow-card: var(--shadow);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* --- the scanner ---------------------------------------------------------------------------- */
+
+/* A line that sweeps down the camera frame, showing that the scanner is looking. */
+@keyframes scan-sweep {
+  0% {
+    top: 6%;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    top: 94%;
+    opacity: 0;
+  }
+}
+.scan-line {
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  top: 6%;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    #34d399 20%,
+    #6ee7b7 50%,
+    #34d399 80%,
+    transparent
+  );
+  box-shadow: 0 0 18px 2px rgb(52 211 153 / 0.65);
+  animation: scan-sweep 2.4s ease-in-out infinite;
+}
+
+@keyframes pop-in {
+  0% {
+    transform: scale(0.92) translateY(8px);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+.pop-in {
+  animation: pop-in 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+@keyframes fade-up {
+  0% {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+.fade-up {
+  animation: fade-up 0.32s ease-out both;
+}
+
+@keyframes shake {
+  10%,
+  90% {
+    transform: translateX(-1px);
+  }
+  20%,
+  80% {
+    transform: translateX(2px);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translateX(-4px);
+  }
+  40%,
+  60% {
+    transform: translateX(4px);
+  }
+}
+.shake {
+  animation: shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+/* Success: a ring that pulses once and a tick that draws itself. */
+@keyframes ring-burst {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+}
+.ring-burst {
+  animation: ring-burst 0.9s ease-out both;
+}
+
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.draw-check {
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  animation: draw 0.45s 0.15s ease-out forwards;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgb(148 163 184 / 0.18), transparent);
+  animation: shimmer 1.4s infinite;
+}
+
+/* People who ask their device for less motion get none of the above, only the end states. */
+@media (prefers-reduced-motion: reduce) {
+  .scan-line,
+  .pop-in,
+  .fade-up,
+  .shake,
+  .ring-burst,
+  .spin,
+  .skeleton::after {
+    animation: none !important;
+  }
+  .scan-line {
+    top: 50%;
+    opacity: 0.9;
+  }
+  .draw-check {
+    animation: none !important;
+    stroke-dashoffset: 0;
+  }
+}

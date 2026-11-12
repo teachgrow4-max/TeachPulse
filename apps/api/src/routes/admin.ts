@@ -7,11 +7,14 @@ import {
   uuidSchema,
 } from '@teachgrow/shared';
 import type { DeviceService } from '../devices/service.js';
+import type { EmployeeQrService } from '../employee-qr/service.js';
 import type { EmployeeService } from '../employees/service.js';
 import type { OfficeService } from '../office/service.js';
 import { requestMeta } from '../lib/request-meta.js';
 import type { AuthMiddleware } from '../middleware/authenticate.js';
+import type { QrAttendanceService } from '../qr-attendance/service.js';
 import { adminDevicesRouter } from './admin-devices.js';
+import { adminEmployeeQrRouter } from './admin-employee-qr.js';
 import { adminOfficeRouter } from './admin-office.js';
 import { actorOf } from './helpers.js';
 
@@ -20,6 +23,8 @@ export interface AdminRouterDeps {
   employees: EmployeeService;
   office: OfficeService;
   devices: DeviceService;
+  employeeQr: EmployeeQrService;
+  qrAttendance: QrAttendanceService;
   userLimiter: RequestHandler;
 }
 
@@ -28,13 +33,14 @@ export interface AdminRouterDeps {
  * active account, no pending forced password change) and `requireRole('admin')`.
  */
 export function adminRouter(deps: AdminRouterDeps): Router {
-  const { auth, employees, office, devices } = deps;
+  const { auth, employees, office, devices, employeeQr, qrAttendance } = deps;
   const router = Router();
 
   router.use(auth.authenticate(), auth.requireRole('admin'), deps.userLimiter);
 
   router.use('/office', adminOfficeRouter({ office }));
   router.use('/devices', adminDevicesRouter({ devices }));
+  router.use(adminEmployeeQrRouter({ qr: employeeQr, scanner: qrAttendance }));
 
   // ---- departments ---------------------------------------------------------------------
   router.get('/departments', async (_req, res) => {

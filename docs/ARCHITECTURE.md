@@ -73,7 +73,7 @@ Spec asks for both Supabase Auth and `POST /api/auth/login`. Resolution:
 
 ### Roles
 
-`roles` table seeded with `employee`, `admin`, `office_display`.
+`roles` table seeded with `employee`, `admin`, `office_display` and `attendance_operator` (added with the QR attendance feature: it may scan employees' QR codes and record attendance, nothing else).
 `office_display` is a least-privilege kiosk identity. It can only call `GET /api/office/qr/current`, so a lobby screen never holds an admin session.
 
 ## 5. Database

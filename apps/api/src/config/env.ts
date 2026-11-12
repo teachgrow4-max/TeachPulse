@@ -67,6 +67,15 @@ const envSchema = z
      * random, server-only. Changing it simply invalidates the codes currently on screen.
      */
     QR_SIGNING_SECRET: z.string().min(32),
+    /**
+     * Secret behind the employees' personal QR codes (an HMAC key). At least 32 characters, random,
+     * server-only, and different from QR_SIGNING_SECRET so the two can be rotated independently.
+     * It is what lets the API show a code again; scanning only needs the stored hash. So changing
+     * it leaves printed cards scanning but stops the API displaying them until each is regenerated
+     * (and does NOT invalidate them: to retire codes, revoke or regenerate them). Treat it like a
+     * database password.
+     */
+    EMPLOYEE_QR_SECRET: z.string().min(32),
 
     CORS_ORIGINS: originList,
     /** WebAuthn relying-party id: the web app's domain. Defaults to the first CORS origin's host. */
@@ -129,6 +138,16 @@ const envSchema = z
           'QR_SIGNING_SECRET',
           'still has the placeholder from .env.example; generate a real one',
         );
+      }
+      if (/replace-with|changeme|change-me|your-secret/i.test(env.EMPLOYEE_QR_SECRET)) {
+        fail(
+          'EMPLOYEE_QR_SECRET',
+          'still has the placeholder from .env.example; generate a real one',
+        );
+      }
+      // One secret for both would mean rotating the lobby code also kills every printed ID card.
+      if (env.EMPLOYEE_QR_SECRET === env.QR_SIGNING_SECRET) {
+        fail('EMPLOYEE_QR_SECRET', 'must differ from QR_SIGNING_SECRET');
       }
     }
   })

@@ -244,10 +244,13 @@ one challenge. Only the newest challenge for a device is live.
 | `check_in_layers_web` | GPS, NETWORK, QR, DEVICE |
 | `check_in_layers_mobile` | GPS, NETWORK, QR, DEVICE |
 | `check_out_layers` | GPS, NETWORK |
+| `admin_scan_layers` | GPS, NETWORK |
 | `verification_ttl_seconds` | 120 |
 | `max_devices_per_employee` | 2 |
 
-GPS and NETWORK cannot be removed from check-in (a database constraint). The `channel` in a
+`admin_scan_layers` is what a person operating the QR attendance scanner must prove about **themselves** before they may record somebody else's attendance (purpose `ADMIN_SCAN`, see [ADMIN_QR_ATTENDANCE.md](ADMIN_QR_ATTENDANCE.md)). It uses the same engine, evidence and rules as a check-in, and is requested only by the scanner endpoints: the employee-facing endpoints reject it. The lobby QR is left out by default because it is single-use per person per rotation.
+
+GPS and NETWORK cannot be removed from check-in or from the scanner check (database constraints). The `channel` in a
 request is declared by the client and is not authenticated, so anyone who can use both the app and
 a browser can pick whichever channel's policy is lighter: **the weaker of the two policies is the
 one that effectively binds everybody.** The defaults are identical for that reason; loosen one

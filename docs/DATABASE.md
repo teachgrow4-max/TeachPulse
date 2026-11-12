@@ -15,6 +15,8 @@ Source of truth: `supabase/migrations/*.sql`, applied in filename order. The beh
 | `20261105000700_auth_support.sql`             | `profiles.must_change_password`; lockout lookup index on `audit_logs`; hard-delete guard on `profiles`; **last-administrator trigger** (advisory-locked) |
 | `20261105000800_active_user_rls.sql`          | `private.is_active_user()`; own-row policies now also require an **active** profile, so deactivation applies to the Data API and Realtime immediately |
 | `20261105000900_office_verification.sql`      | QR scan outcome `VALID`; `attendance_policies.max_devices_per_employee`; unique live WebAuthn credential; **`device_challenges`** (single-use, API-only); retention now also purges spent challenges |
+| `20261106000100_admin_scan_purpose.sql`        | enum value `ADMIN_SCAN` (alone, because a new enum value cannot be used in the transaction that adds it) |
+| `20261106000200_employee_qr_attendance.sql`   | role `attendance_operator`; event source `ADMIN_QR`; `attendance_policies.admin_scan_layers`; **`employee_qr_codes`** and **`qr_scan_logs`** (RLS, column-level grants, guard triggers); the engine core `record_check_in` / `record_check_out` extracted from `check_in` / `check_out`; `assert_scanner`, `qr_attendance_state`, `admin_qr_record`. See [ADMIN_QR_ATTENDANCE.md](ADMIN_QR_ATTENDANCE.md) |
 
 ## Conventions
 
@@ -35,6 +37,9 @@ All take an explicit `p_now` (default `clock_timestamp()`), so the API and tests
 | `check_in(employee, verification, now)`                                      | Consumes a VERIFIED, unexpired, single-use verification. Late = local time ≥ threshold. Rejects weekly off / holiday / leave. Idempotent on replay. |
 | `check_out(employee, verification, now)`                                     | Computes net time, half-day, overtime, early checkout. Blocked during a break unless an admin exception exists.                                    |
 | `start_break(employee, type, now)` / `end_break(employee, type?, now)`       | Lunch / short break; no overlap; optional short-break limit.                                                                                        |
+| `record_check_in(...)` / `record_check_out(...)`                              | The engine core: everything `check_in` / `check_out` do after the verification has been proved. Called by them (source `EMPLOYEE`) and by `admin_qr_record` (source `ADMIN_QR`), so both ways in apply identical rules. |
+| `qr_attendance_state(employee, now)`                                         | Read-only: what scanning this employee's code would mean right now (check in, check out, already checked out, or blocked and why).                |
+| `admin_qr_record(scan, admin, action, now)`                                  | Records a confirmed QR scan: re-checks the scan, the code, the employee and the operator's own presence proof, runs the engine core, spends the proof, marks the scan recorded. |
 | `grant_checkout_exception(employee, admin, reason, now)`                     | Admin-authorised checkout while a break is open.                                                                                                    |
 | `create_correction(...)` / `decide_correction(...)` / `admin_correct(...)`   | Correction workflow. Originals are never overwritten; a `CORRECTION_APPLIED` event records before/after. Self-approval is refused.                  |
 | `finalize_attendance_day(date, now)` / `finalize_due_days(now, lookback)`    | Idempotent: ABSENT, WEEKLY_OFF, HOLIDAY, ON_LEAVE, INCOMPLETE. Hourly via `pg_cron` or an external scheduler.                                       |

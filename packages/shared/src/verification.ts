@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import {
+  ATTENDANCE_VERIFICATION_PURPOSES,
   CHANNELS,
-  VERIFICATION_PURPOSES,
   type LayerResult,
   type VerificationLayer,
   type VerificationPurpose,
@@ -261,7 +261,7 @@ export const deviceEvidenceSchema = z.strictObject({
 export type DeviceEvidence = z.output<typeof deviceEvidenceSchema>;
 
 export const verifyRequestSchema = z.strictObject({
-  purpose: z.enum(VERIFICATION_PURPOSES),
+  purpose: z.enum(ATTENDANCE_VERIFICATION_PURPOSES),
   channel: z.enum(CHANNELS),
   gps: gpsEvidenceSchema.optional(),
   qr: qrEvidenceSchema.optional(),
@@ -269,6 +269,14 @@ export const verifyRequestSchema = z.strictObject({
 });
 export type VerifyRequest = z.input<typeof verifyRequestSchema>;
 export type VerifyRequestBody = z.output<typeof verifyRequestSchema>;
+
+/**
+ * What the verification engine itself accepts: the employee-facing request, but with any purpose.
+ * The scanner endpoints use it to ask for ADMIN_SCAN, which no employee endpoint can request.
+ */
+export type VerificationRequest = Omit<VerifyRequestBody, 'purpose'> & {
+  purpose: VerificationPurpose;
+};
 
 /** Pre-check of a scanned QR code, before the user is asked for anything else. */
 export const qrCheckRequestSchema = qrEvidenceSchema;
