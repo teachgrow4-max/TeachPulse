@@ -5,7 +5,15 @@ import { useAuth } from '../../lib/auth';
 import { cn } from '../../lib/utils';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
-import { LogOutIcon, QrIcon, ScanIcon, SpinnerIcon, UserIcon, UserPlusIcon } from '../ui/icons';
+import {
+  HistoryIcon,
+  LogOutIcon,
+  QrIcon,
+  ScanIcon,
+  SpinnerIcon,
+  UserIcon,
+  UserPlusIcon,
+} from '../ui/icons';
 
 const ROLE_LABEL: Record<RoleName, string> = {
   employee: 'Employee',
@@ -19,17 +27,26 @@ interface NavItem {
   label: string;
   icon: typeof QrIcon;
   roles: RoleName[];
+  /** Only for accounts whose own attendance is tracked. */
+  needsAttendance?: boolean;
 }
 
 const NAV: NavItem[] = [
+  { to: '/admin/attendance', label: 'Attendance', icon: HistoryIcon, roles: ['admin'] },
   {
     to: '/scanner',
-    label: 'QR attendance',
+    label: 'Scan QR',
     icon: ScanIcon,
     roles: ['admin', 'attendance_operator'],
   },
-  { to: '/admin/qr', label: 'QR management', icon: QrIcon, roles: ['admin'] },
   { to: '/admin/employees/new', label: 'Add employee', icon: UserPlusIcon, roles: ['admin'] },
+  {
+    to: '/attendance-qr',
+    label: 'Attendance QR',
+    icon: QrIcon,
+    roles: ['employee', 'admin'],
+    needsAttendance: true,
+  },
   {
     to: '/profile',
     label: 'My profile',
@@ -42,7 +59,9 @@ const NAV: NavItem[] = [
 export function AppShell() {
   const { user, logout } = useAuth();
   if (!user) return null;
-  const items = NAV.filter((item) => item.roles.includes(user.role));
+  const items = NAV.filter(
+    (item) => item.roles.includes(user.role) && (!item.needsAttendance || user.attendanceRequired),
+  );
 
   return (
     <div className="flex min-h-dvh flex-col">

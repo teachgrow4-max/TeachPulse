@@ -1,192 +1,178 @@
-# Admin-operated QR attendance
+# QR attendance: the employee generates a code, an administrator scans it
 
-How an administrator or attendance operator records an employee's attendance by scanning the personal QR code on their ID card. Built on top of the office-verification engine ([VERIFICATION.md](VERIFICATION.md)) and the attendance engine ([DATABASE.md](DATABASE.md)); it adds no second attendance system.
+How attendance is recorded with QR codes. Built on the office-verification engine ([VERIFICATION.md](VERIFICATION.md)) and the attendance engine ([DATABASE.md](DATABASE.md)); it adds no second attendance system.
 
-> **Two different QR codes exist. Do not confuse them.**
->
-> | | Office QR | Employee QR |
-> | --- | --- | --- |
-> | Shown | on the lobby screen | printed on / shown from an employee's ID |
-> | Changes | every 30 seconds | never, until an administrator regenerates it |
-> | Read by | an employee, to prove they are in the building (a layer of check-in) | an administrator or operator, to record that employee |
-> | Looks like | `TG1.<window>.<code>` | `TGE1.<43 characters>` |
-> | Tables | `qr_tokens`, `qr_scan_events` | `employee_qr_codes`, `qr_scan_logs` |
+> **This replaces the first version of this feature**, in which every employee had a permanent ID-card QR and the *scanning* administrator had to prove they were at the office. See [What changed](#what-changed-from-the-id-card-version).
 
-## What it does
+```
+EMPLOYEE   sign in -> location + office network checked -> Generate Attendance QR -> shows it
+ADMIN      sign in -> Attendance dashboard -> Scan QR -> attendance recorded, employee shown
+```
 
-1. **Every employee has exactly one live QR code**, created automatically with their account. Nothing about the person is inside it.
-2. An **administrator or attendance operator** opens the scanner page, points the camera at the code, and sees who it belongs to and what would happen: **CHECK IN**, **CHECK OUT**, **ALREADY CHECKED OUT**, or a reason it cannot be recorded (holiday, weekly off, leave, on a break, inactive, revoked).
-3. **Nothing is recorded by scanning.** The operator must press the big button. Scanning the same code ten times changes nothing.
-4. On confirming, the server checks that **the operator** is at the office (their location and the office network, per the policy), and then records the attendance **through the same engine and into the same records as an employee's own check-in**, marked `ADMIN_QR`.
-5. Administrators can **view, download, regenerate and revoke** any employee's code, and see **every scan**: who scanned, what happened, which device.
-6. Employees see their own code on their profile and can download it as a **PNG or PDF ID card**.
+**The two halves are completely separate.**
 
-## Who can do what
+| | Employee | Administrator / attendance operator |
+| --- | --- | --- |
+| Location (GPS) | checked, on the server, before a code can be made | **never** |
+| Office network (Wi-Fi) | checked, on the server, before a code can be made | **never** |
+| Where they can sign in and work from | anywhere (the code just cannot be made away from the office) | **anywhere** |
 
-| | employee | `attendance_operator` | `admin` | `office_display` |
-| --- | :-: | :-: | :-: | :-: |
-| See and download their **own** QR code (`GET /api/employee-qr/me`) | yes | yes | yes | no |
-| Use the scanner (`/api/qr-attendance/*`) | **no** | yes | yes | no |
-| View / download others' codes, regenerate, revoke, issue missing codes, read the scan history (`/api/admin/*`) | no | no | yes | no |
+An administrator is never blocked with "You do not appear to be at the office": the scanner endpoint does not look at the scanner's location or address at all, and the web page does not ask the browser for it.
 
-`attendance_operator` is a new role (seeded by migration `20261106000200`): a front-desk or reception account that scans and records but cannot see employee lists, other people's codes, reports or settings. It is **not** an employee account: it has no employee check-in endpoints. If its own attendance is tracked (`attendance_required`), another operator or an administrator scans its code.
+## What the employee does
 
-**Nobody records their own attendance with the scanner** (`SELF_SCAN_FORBIDDEN`, HTTP 403). The scanner checks fewer things than a check-in may require (the lobby code and a registered device are optional for it), so letting somebody scan themselves would be a way round the stricter check-in policy. The attempt is kept in the scan history as a refusal; the database also refuses to hold a pending or recorded scan of one's own code. An administrator who also marks their own attendance uses the ordinary check-in, like any employee.
+Page **Attendance QR** (`/attendance-qr`, the employee's home page).
 
-An employee account can never reach the scanner endpoints: the role check refuses it (HTTP 403) and writes an `authz.denied` audit entry. Holding a copy of somebody's code, or being signed in at all, does not let anyone record attendance.
+1. **Check my location and Wi-Fi.** The browser sends its position; the server measures the distance to the office (Haversine, server side) and looks at the address the request really came from. Two rows show the result separately (*Location*, *Office Wi-Fi*). If something fails, the page says exactly what and what to do about it (for example "You are 380 m from the office").
+2. **Generate Attendance QR.** Only enabled after step 1 passes, and only if the account is active and has not used up today's codes. The server makes a code for **today** and **one action**: check-in if the person has not checked in, check-out if they have. A large QR appears with a countdown and an *Expires in 1:23* badge.
+3. **Show it to an administrator.** The page polls (every 3 s) and turns into *Checked in / Checked out, recorded at 10:03* as soon as the code is scanned. When time runs out it says **Expired**; the person checks again to make a new one.
+
+Regenerating is allowed but bounded: every code needs a **fresh** office check (the proof is spent by generating), a new code **immediately retires** the previous one, and at most `daily_qr_max_per_day` (default **5**) may be made per day.
+
+### "Office Wi-Fi" means the office's network address
+
+A web page cannot read the name of the Wi-Fi network it is on. The check therefore works the way it always has in this system: the server looks at the **public IP address** the request came from and compares it with the list of office networks (`office_networks`, set in the office settings). Add the office's public address range there. This also means a phone on mobile data fails the Wi-Fi check, which is intended.
+
+The distance limit is the office's own `geofence_radius_m`. **The default is now 150 m** (new offices; an office that already exists keeps its value, so check yours — see Operations).
+
+## What the administrator does
+
+Page **Scan QR** (`/scanner`), reachable from the **Attendance** dashboard.
+
+1. Open the page; the camera opens (everything is decoded on the device; no video is sent anywhere).
+2. Point it at the employee's screen.
+3. The server validates the code and records the attendance **in one step**. The page shows the employee's **name, employee ID, department, attendance date, check-in time (and check-out time) and status** (*Present* / *Late*), with a success animation. There is no confirm button.
+4. *Scan another employee*.
+
+Refusals are explained in words, and the employee's name is shown when the code identified one:
+
+| Situation | What the scanner says |
+| --- | --- |
+| The code is used already | **Already scanned**; when it was first recorded; "nothing was recorded twice" (a *duplicate scan* warning on the dashboard) |
+| The code ran out of time | **This QR code has expired** |
+| The employee made a newer code | **A newer QR code exists** |
+| Not a code from this system (a poster, the lobby screen's code, an old ID card) | **QR code not recognised** |
+| The employee was deactivated after generating | **Employee account is inactive** |
+| The day has moved on (they were checked in some other way meanwhile) | **This QR code is out of date** |
+| Holiday, weekly off, leave, on a break, already checked out | the reason, and nothing is recorded |
+
+Nobody can record **their own** attendance (`SELF_SCAN_FORBIDDEN`): an administrator who also marks their own attendance has another administrator scan their code.
+
+## The attendance dashboard (administrators)
+
+Page **Attendance** (`/admin/attendance`), the administrator's home page.
+
+- **Daily report** for today (refreshed every 30 s) or any past day: *Present*, *Late arrivals*, *Absent*, *On leave*; a table with every tracked employee, their status, **check-in and check-out times**; filters (everyone / present / late / absent); **Download CSV**.
+- **Warnings** for the day: how many **duplicate scans** and how many **invalid or expired codes**, with a link to the history.
+- **Scan history** (tab): every scan, recorded or refused, with who scanned, which device, from which address (administrators only), the outcome, and filters by date, employee, scanner and outcome.
+
+*Absent* means "tracked, active, nothing recorded for that day, and the day is not a holiday, a weekly off or approved leave". Early in the day that simply means "not in yet".
 
 ## How a code works
 
 ```
-TGE1.<token>      token = base64url( HMAC-SHA256( key, employeeId + "\n" + nonce ) )     43 characters
+TGD1.<43 base64url characters>        32 bytes from the operating system's CSPRNG
 ```
 
-- `nonce`: 32 random bytes from the operating system's CSPRNG, stored beside the hash.
-- `key`: derived (HKDF-SHA256) from `EMPLOYEE_QR_SECRET`, a secret only the API process holds.
-- The database stores **only `SHA-256(code)` and the nonce**. The code itself is never stored.
+- **Random, not derived.** Nothing about the person, the day or the action is inside it, and it cannot be recomputed from anything the server keeps.
+- **Hash only.** The database stores `SHA-256(code)` and nothing else; the code itself is shown **once**, in the response to *generate*, and never again (reloading the page means making a new one). Reading the table, a backup or the audit log yields nothing usable.
+- **Bound on the server, not in the code.** Each row ties the hash to **one employee, one calendar day (office time) and one action**, plus the employee's passed office verification as evidence. The scanner sends only the scanned text; employee, day and action are looked up, never trusted from the client.
+- **Short lived.** `daily_qr_ttl_seconds` (default **90 s**, 30 s to 15 min). A code also dies at midnight, whatever its remaining time.
+- **Single use.** One scan records attendance and spends the code; the database enforces one recorded scan per code and one *used* code per employee per day per action.
+- **Replaced, not stacked.** At most one live code per employee (a unique index); making another retires the old one.
+- **Lookups hash the exact text.** Never decoded (the last base64url character carries only 4 bits, so four spellings decode identically). A test tries all 63 other spellings of a real code's last character; all are refused.
 
-**Why derived rather than random-and-forgotten.** The employee and administrators must be able to see the same code again whenever they open the profile or download the ID card, yet the database must hold nothing that works as a code. A keyed derivation does both: reading the table reveals no usable code (the secret is also needed), the API can re-derive a code on demand, and a new nonce means a new, unrelated code. If you prefer the stricter "shown once, never recoverable" model, the trade is that profiles and downloads could only show a code at the moment it is issued.
+## Rules enforced by the database
 
-**Lookups hash the exact text that was scanned.** Never decode it: the last base64url character carries only 4 bits, so four different spellings of one code decode identically. (That exact mistake once let a single office-QR scan be reused four times; it was found and fixed in Phase 5, and a test sweeps all 64 possible last characters here too.) Only one spelling is accepted.
-
-**Life cycle**
-
-| Action | What happens |
-| --- | --- |
-| Account created | A code is issued in the **same transaction** as the account: there is never an employee without one (the lobby-screen account has no ID card). |
-| Account that predates this feature | Gets its code the first time anybody asks (the employee opens their profile, an administrator opens or lists them) or when an administrator presses **Issue missing codes** (`POST /api/admin/employee-qr/backfill`). |
-| **Regenerate** | The live code is retired and a new one issued, atomically. **Every earlier code stops working immediately.** |
-| **Revoke** | The live code is withdrawn (card lost, code copied). The person has **no** code until an administrator regenerates one; nobody quietly replaces it. A reason is required. |
-| Viewing a code | Administrators can see any employee's code. Every view is audited (who, which employee), never what they saw. |
-
-The database enforces "exactly one live code per employee" (a unique index), makes the code's identity columns immutable, and allows exactly one edit ever: `ACTIVE → REVOKED`, once.
-
-### The secret, and rotating it
-
-`EMPLOYEE_QR_SECRET` (at least 32 characters, different from `QR_SIGNING_SECRET`, placeholder rejected in production) is what lets the API **show** a code again. Scanning needs only the stored hash. So:
-
-- **Rotating it does not invalidate printed cards.** They keep scanning. The API simply cannot display them any more (it says the code must be regenerated; it never shows a code that would not match its stored hash).
-- **To retire codes, regenerate or revoke them.** After a suspected leak of the secret *together with* a database dump, regenerate everyone's code (an attacker with both can compute valid codes for the old nonces).
-- The two secrets are separate on purpose, so rotating the lobby code never touches ID cards.
-
-## The three steps of recording
-
-```
- POST /api/qr-attendance/scan                 read the code     -> who, and what would happen   (changes nothing)
- POST /api/qr-attendance/scans/:id/verify     prove the OPERATOR is at the office
- POST /api/qr-attendance/scans/:id/confirm    record it         (Idempotency-Key required)
-```
-
-### 1. Scan
-
-`{ payload, scanner: { kind: "WEB" | "MOBILE", label?, camera? } }`
-
-Every scan is written to `qr_scan_logs`, **including refused ones**. Outcomes:
-
-| Detected | Meaning | Operator sees | Can confirm? |
-| --- | --- | --- | :-: |
-| `CHECK_IN` | Valid code, nothing recorded yet today | green **CHECK IN** | yes |
-| `CHECK_OUT` | Checked in, not out (including a day left open overnight) | amber **CHECK OUT** | yes |
-| `ALREADY_CHECKED_OUT` | Today is complete | **ALREADY CHECKED OUT** | no |
-| `BLOCKED` | Holiday, weekly off, approved leave, a break is running (and no checkout exception), or the day was closed without a check-out | the reason | no |
-| refused | Unknown or malformed code (`EMPLOYEE_QR_INVALID`), revoked (`EMPLOYEE_QR_REVOKED`), inactive employee (`EMPLOYEE_INACTIVE`), attendance not tracked (`ATTENDANCE_NOT_TRACKED`) | an error, naming the employee when the code identified one | no |
-
-What is decided comes from the database function `private.qr_attendance_state`, which uses the same facts as `check_in` / `check_out` (day type, leave, open record, breaks, exceptions), so the screen never promises something the engine would refuse.
-
-A scan that needs confirming expires after `verification_ttl_seconds` (default 120 s). A scan that is never confirmed is not rewritten: history simply shows it as **Expired**.
-
-**What is stored about a scan:** the scanning person, the employee, the code's id, a SHA-256 of what was presented (never the text; for malformed input not even that), the device description the client declared plus its user agent, the client address, the request id, and later the confirmation. A malformed scan stores no copy of what was scanned.
-
-### 2. Verify (the operator, not the employee)
-
-`{ channel, gps?, qr?, device? }` → the same verification engine as a check-in, with purpose **`ADMIN_SCAN`**, evaluated for the **operator's** identity. The result is stored as an ordinary `attendance_verifications` row (purpose `ADMIN_SCAN`, `employee_id` = the operator), linked to the scan. The **latest attempt, passed or failed**, is attached to the scan so history shows why a scan did not become attendance.
-
-Which layers: `attendance_policies.admin_scan_layers`, default **GPS + NETWORK**; GPS and NETWORK can never be removed (a database constraint, as for check-in). Administrators can additionally require the lobby QR and/or a registered device.
-
-Why the lobby QR is off by default: it is single-use per person per 30-second rotation, so an operator processing a queue would have to wait for a new code between employees.
-
-Every rule of [VERIFICATION.md](VERIFICATION.md) applies unchanged: the address is the one Express resolved (`req.ip`, never a forwarding header unless a trusted proxy is configured), the location is judged against the office with a server-side Haversine distance, and a failed attempt reports **every** failed layer at once.
-
-### 3. Confirm
-
-`POST /api/qr-attendance/scans/:id/confirm` with `{ action }` and a required `Idempotency-Key: <8-128 chars>` header.
-
-Inside **one transaction** the server: claims the idempotency key, locks the scan, re-checks everything (scan belongs to this operator, still pending, not expired, the action is the one the scan showed, the code is still the employee's live one, the employee is still active and tracked, the operator's verification is theirs, `ADMIN_SCAN`, passed, unspent, unexpired, and from a device that is still approved), runs the **shared engine core** with source `ADMIN_QR`, spends the verification, marks the scan `RECORDED`, writes the audit entry, and stores the answer under the key. Any failure rolls all of it back, **including the key**, so the same request can simply be tried again.
-
-The response (`ConfirmScanResponse`) contains the employee, the action, the server's timestamp and the day's summary.
-
-## One engine, two ways in
-
-Migration `20261106000200` extracts the second half of `private.check_in` / `private.check_out` into `private.record_check_in` / `private.record_check_out`. `check_in` / `check_out` keep their signatures and behaviour (they prove the employee's own verification, then call the core, then spend it); `admin_qr_record` calls the same core. So:
-
-- **Same records.** There is no separate "QR attendance" table. One `attendance_records` row per employee per day; QR scans add events to it.
-- **Same rules.** Late arrival (local time ≥ threshold), holiday / weekly off / leave refusal, one check-in per day, break handling, net hours, half-day, overtime, early checkout: all in one place. A database test confirms that for 09:59:59, 10:19:59, 10:20:00, 10:20:01 and 14:00 a check-in through the scanner and a self check-in classify identically down to the policy snapshot.
-- **Source recorded.** `attendance_events.source = 'ADMIN_QR'`, `actor_id` = the operator, `verification_id` = the operator's proof, metadata `{ scan_id, qr_code_id, scanned_by }`. The employee's own device is not involved, so no `device_id` is recorded.
-- **Server time.** The timestamp is the server's clock at the moment of confirming. The confirm schema is strict: a body that tries to supply `occurredAt` or `timestamp` is rejected with 400.
-- **Immutable events.** `attendance_events` is append-only, as before. Mistakes go through the existing correction workflow (`admin_correct`, employee requests, admin decisions); nothing here edits history.
-
-## Database
-
-Migrations `20261106000100_admin_scan_purpose.sql` (the new enum value must be added alone, because a new enum value cannot be used in the transaction that adds it) and `20261106000200_employee_qr_attendance.sql`.
+Migration `20261107000100_daily_qr_attendance.sql` (no enum is added, so it can be run in one go).
 
 | Object | Purpose |
 | --- | --- |
-| `roles` row `attendance_operator` | the scanner role |
-| `verification_purpose` += `ADMIN_SCAN` | the operator's presence proof; `device_challenges.purpose` accepts it too |
-| `attendance_events.source` += `ADMIN_QR` | where the event came from |
-| `attendance_policies.admin_scan_layers` | layers the operator must pass; default `{GPS,NETWORK}`, must contain both |
-| **`employee_qr_codes`** | `id, employee_id, token_hash (32 bytes, unique), token_nonce, status ACTIVE/REVOKED, generated_at, generated_by, revoked_at, revoked_by, revoke_reason`; one ACTIVE per employee; guard trigger |
-| **`qr_scan_logs`** | `id, scanned_by, employee_id, qr_code_id, token_hash, qr_result, detected_action, reason_code, status PENDING/RECORDED/NO_ACTION/REJECTED, scanned_at, expires_at, scanner, client_ip, request_id, office_verification_id/result, confirmed_at/action, attendance_event_id, attendance_record_id`; constraints tie each status to its fields; guard trigger |
-| `private.record_check_in` / `record_check_out` | the engine core, shared |
-| `private.assert_scanner(user)` | administrator or attendance operator, active |
-| `private.qr_attendance_state(employee, now)` | what a scan means right now (JSON) |
-| `private.admin_qr_record(scan, admin, action, now)` | records a confirmed scan |
+| `attendance_policies.daily_qr_layers` | what must be proved before generating; default `{GPS,NETWORK}`; GPS and NETWORK can never be removed (constraint). Separate from the check-in layers so the lobby code and registered device are not demanded here |
+| `attendance_policies.daily_qr_ttl_seconds` / `daily_qr_max_per_day` | lifetime and daily limit |
+| `office_locations.geofence_radius_m` default | 150 |
+| **`attendance_qr_tokens`** | `id, employee_id, work_date, action, token_hash (unique, 32 bytes), verification_id (unique), verification_waived, status ACTIVE/USED/SUPERSEDED, issued_at, expires_at, used_at, used_by` |
+| `qr_scan_logs.daily_qr_id` and widened `qr_result` | scans of these codes (`EXPIRED`, `USED`, `SUPERSEDED` joined the old values); a scan is now written already `RECORDED` or refused |
+| `private.issue_daily_qr` | generating: who may, what the code is for (the engine's own next action), the employee's proof is spent, the daily limit, the old code retired |
+| `private.daily_qr_record` | scanning: row-locks the code, re-checks every rule against the stored row, runs the **same engine core** as a self check-in with source `ADMIN_QR`, marks the code used, writes the scan log; all in one transaction |
 
-**Integrity** (all enforced by the database, all tested): one live code per employee; code identity columns immutable, one-way revocation; a scan's evidence columns immutable, only its confirmation can be filled in and only once; a finished scan is frozen; each attendance event is explained by at most one scan; one presence proof can back at most one recorded scan; no `DELETE` or `TRUNCATE` on either table.
+Guarantees (all tested): one live code per person; a code's identity columns never change and it moves only `ACTIVE -> USED` or `ACTIVE -> SUPERSEDED`, once; a finished scan is frozen; no `DELETE`/`TRUNCATE` on either table; one attendance event is explained by at most one scan; **at most one attendance record per employee per day** (the engine's own unique key) and at most one recorded check-in and check-out; the person who scanned can never be the person scanned.
 
-**Row Level Security and privileges.** Both tables have RLS on; client roles get `SELECT` on **safe columns only** (the hash, nonce, client address, device description and request id are never readable by a signed-in user, administrators included, except through the administrator API for the address and device). Employees see their own code's status and the scans about them; the person who scanned sees their own scans; administrators see all rows; a deactivated person sees nothing. No client role can write either table. The standard lockdown block still allows clients to execute only the three RLS helpers.
+**Row Level Security.** Both tables have RLS on; signed-in users get `SELECT` on safe columns only (never the hash, the address or the device description). Employees see their own codes; administrators see all; a deactivated person sees nothing. The API's own database role does the writing.
 
-**Audit log** (`audit_logs`, append-only): `employee_qr.issued`, `.viewed`, `.regenerated`, `.revoked`, `.backfilled`, `qr_attendance.recorded`, and `authz.denied` for an employee who tries the scanner. Entries name the codes by id and never contain a code or token.
+**Audit log** (`audit_logs`, append-only): `daily_qr.generated` (code id, action, day, whether the proof was waived; never the code), `qr_attendance.recorded` (scan id, event id, employee, scanner), and `authz.denied` when an employee tries the scanner.
 
-## API reference
+## API
 
-All errors have the usual shape `{ error: { code, message, requestId, details? } }`.
+Errors have the usual shape `{ error: { code, message, requestId, details? } }`.
 
 | Method and path | Who | Notes |
 | --- | --- | --- |
-| `GET /api/employee-qr/me` | employee, operator, admin | `{ status: ACTIVE\|REVOKED\|NONE, payload, generatedAt, revokedAt, holder }`. Issues a first code if the person has never had one. |
-| `POST /api/qr-attendance/scan` | operator, admin | see above. 200 with the resolution, or 422 with `details.scanId` |
-| `POST /api/qr-attendance/scans/:id/verify` | operator, admin | 200 with a `VerifyResponse`, or 422 `VERIFICATION_FAILED` with the reasons |
-| `POST /api/qr-attendance/scans/:id/confirm` | operator, admin | `Idempotency-Key` required; `Idempotent-Replayed: true` on a repeat |
-| `POST /api/qr-attendance/challenge` | operator, admin | one-time challenge for the operator's registered device (only if the policy asks for it) |
-| `GET /api/qr-attendance/recent?limit=` | operator, admin | the caller's own latest scans |
-| `GET /api/admin/employee-qr?search=&qrStatus=&departmentId=&page=&pageSize=` | admin | everyone but the lobby account, with code state and last scan |
-| `GET /api/admin/employee-qr/:employeeId` | admin | the code to download, and every code the person has had |
-| `POST /api/admin/employee-qr/:employeeId/regenerate` | admin | `{ reason? }` |
-| `POST /api/admin/employee-qr/:employeeId/revoke` | admin | `{ reason }` (3 to 500 characters) |
-| `POST /api/admin/employee-qr/backfill` | admin | `{ issued }` |
-| `GET /api/admin/qr-scans?from=&to=&employeeId=&scannedBy=&status=&page=&pageSize=` | admin | dates are calendar days **at the office**; status also accepts `EXPIRED` |
+| `GET /api/attendance-qr/today` | employee, admin (tracked) | what a code would be for (`CHECK_IN` / `CHECK_OUT` / `ALREADY_CHECKED_OUT` / `BLOCKED` + reason), whether one is live, codes made today, the policy's lifetime and limit. Never returns a code |
+| `POST /api/attendance-qr/verify` | employee | `{ gps }` -> 200 with a single-use verification and `action`, or 422 `VERIFICATION_FAILED` with `details.layers` and `details.reasons` naming every failed layer |
+| `POST /api/attendance-qr/generate` | employee, admin | `{ verificationId }` (omitted for administrators) -> 201 with the code, **once** |
+| `GET /api/attendance-qr/:id` | the code's owner | `ACTIVE`/`USED`/`EXPIRED`/`SUPERSEDED` and `usedAt` (the page polls this) |
+| `POST /api/qr-attendance/scan` | admin, attendance operator | `{ payload, scanner: { kind, label?, camera? } }` -> 200 with the employee and the day's record, or an error with `details.employee` / `details.firstRecordedAt`. **No location, no address check, no extra fields (a body that sends `gps` is 400).** |
+| `GET /api/qr-attendance/recent?limit=` | admin, operator | the caller's own latest scans |
+| `GET /api/admin/attendance/daily?date=` | admin | the day's report (summary, warnings, one row per tracked employee) |
+| `GET /api/admin/qr-scans?...` | admin | scan history |
 
-New error codes: `EMPLOYEE_QR_INVALID` 422, `EMPLOYEE_QR_REVOKED` 422, `EMPLOYEE_INACTIVE` 422, `ATTENDANCE_NOT_TRACKED` 422, `SCAN_EXPIRED` 422, `SCAN_ALREADY_RECORDED` 409, `SCAN_NOT_ACTIONABLE` 409, `SCAN_ACTION_MISMATCH` 409, `SELF_SCAN_FORBIDDEN` 403, `IDEMPOTENCY_KEY_REUSED` 422. Existing engine codes (`ALREADY_CHECKED_IN`, `ALREADY_CHECKED_OUT`, `NOT_CHECKED_IN`, `HOLIDAY`, `WEEKLY_OFF`, `ON_LEAVE`, `ACTIVE_BREAK`, `VERIFICATION_*`) are returned unchanged.
+New error codes: `QR_EXPIRED` 422, `QR_ALREADY_USED` 409, `QR_SUPERSEDED` 422, `QR_LIMIT_REACHED` 429. Existing codes (`EMPLOYEE_QR_INVALID`, `EMPLOYEE_INACTIVE`, `SELF_SCAN_FORBIDDEN`, `SCAN_ACTION_MISMATCH`, `HOLIDAY`, `WEEKLY_OFF`, `ON_LEAVE`, `ACTIVE_BREAK`, `ALREADY_CHECKED_OUT`, `VERIFICATION_*`) are returned as before.
 
-Rate limits (per signed-in person, per API instance): scans 120 / minute, office checks 30 / minute, everything else the general per-user limit.
+Removed: `POST /api/qr-attendance/scans/:id/verify`, `.../confirm` and `POST /api/qr-attendance/challenge` (the scanner no longer proves anything about itself, and there is nothing to confirm).
+
+Rate limits (per person, per API instance): scans 120/min, verifications 30/min, generations 10/min.
+
+### Administrators and "never asked for a location"
+
+An administrator who also marks their own attendance (`attendance_required = true`) generates a code **without any office verification** (`verification_waived`). The scanning side never asks anyone for a location. This is the rule as requested; it does mean such an administrator can generate a code from anywhere, and the safeguard is that **another** administrator must scan it, so it is visible in the history.
+
+## One engine, two ways in
+
+`private.record_check_in` / `record_check_out` (migration `20261106000200`) are the shared core of the self check-in and of a scan. So there is no separate "QR attendance" table: one `attendance_records` row per employee per day; late rules, holidays, weekly off, leave, breaks, net hours, half days and overtime live in one place. A scan's event has `source = 'ADMIN_QR'`, `actor_id` = the administrator, `verification_id` = the **employee's** office check made when the code was generated. The timestamp is the server's clock at the moment of scanning, never the client's.
+
+## What changed from the ID-card version
+
+| Before | Now |
+| --- | --- |
+| Permanent ID-card QR (`TGE1...`), issued with the account | Short-lived QR (`TGD1...`) the employee generates each time |
+| The **scanner** proved they were at the office (GPS + network) | The **employee** proves it; the scanner is never checked |
+| Scan, then verify, then confirm (3 calls) | One call |
+| Admin pages to view, download, regenerate and revoke ID cards; PNG/PDF ID card on the profile | Removed from the web app |
+
+Why the ID card could not stay: with nobody proving presence at scan time, a permanent code would let a photograph of a card record attendance from anywhere. The scanner now answers an old card with *"ID-card codes no longer record attendance"*.
+
+**Left in place, unused:** the `employee_qr_codes` table and its `/api/employee-qr` and `/api/admin/employee-qr` endpoints (history is not thrown away; a new account still gets a card code, and the admin employee picker still uses the list endpoint), the `private.admin_qr_record` function, the `ADMIN_SCAN` purpose and `admin_scan_layers`. They can be removed in a follow-up; nothing reachable depends on them for attendance.
+
+## Operations
+
+1. Run migration `20261107000100_daily_qr_attendance.sql` (SQL editor or `supabase db push`).
+2. **Set the office's radius to 150 m** if you want it (`update public.office_locations set geofence_radius_m = 150 where is_active;`) and set `max_gps_accuracy_m` high enough for laptops (laptops without GPS often report 100 m or worse accuracy; the default 50 m rejects them).
+3. Add the office's public IP range in the office networks (the Wi-Fi check).
+4. Tune per policy row: `daily_qr_ttl_seconds`, `daily_qr_max_per_day`, `daily_qr_layers`. Leave `daily_qr_layers` at GPS + NETWORK unless you have a reason: the employee page can supply a location and the server sees the network address, but it cannot supply the lobby code or a registered-device proof, so adding `QR` or `DEVICE` there makes generating a code impossible from the web app.
+   ```sql
+   -- a code lasts 2 minutes, and a person may make 8 a day
+   update public.attendance_policies
+   set daily_qr_ttl_seconds = 120, daily_qr_max_per_day = 8
+   where id = (select id from public.attendance_policies order by effective_from desc limit 1);
+   ```
+   There is no settings page for these yet (nor for the other policy columns); they are changed in the database.
+5. `EMPLOYEE_QR_SECRET` is no longer needed for attendance codes (they are random); it is still required by the server while the retired ID-card endpoints exist.
 
 ## The web app
 
-`apps/web`: Vite, React 19, TypeScript, Tailwind CSS 4, React Router, TanStack Query. **It is new** (no web app existed before this feature) and contains only what this feature needs: sign-in, forced password change, the profile with the QR card, the scanner, and QR management. It follows the browser contract in [AUTH.md](AUTH.md): access token in memory only, refresh in an HttpOnly cookie, the CSRF header on login / refresh / logout, one renewal and one retry on a 401.
+`apps/web`: Vite, React 19, TypeScript, Tailwind CSS 4, React Router, TanStack Query. It follows the browser contract in [AUTH.md](AUTH.md): access token in memory only, refresh in an HttpOnly cookie, the CSRF header on login / refresh / logout, one renewal and one retry on a 401.
 
 | Route | For | What |
 | --- | --- | --- |
 | `/login`, `/change-password` | everyone | sign in; choose your own password when you signed in with a temporary one |
-| `/profile` | employee, operator, admin | profile and **My QR code** with **Download PNG** and **Download PDF** |
-| `/scanner` | operator, admin | camera scanner, employee card, confirm, recent scans |
-| `/admin/qr` | admin | **Employee codes** (search, filter, view, download, regenerate, revoke, issue missing) and **Scan history** (date range, employee, recorded by, outcome) |
+| `/attendance-qr` | employee (home page), administrator who marks attendance | location and Wi-Fi check, Generate Attendance QR, the code with its countdown, confirmation |
+| `/profile` | everyone | the person's details |
+| `/admin/attendance` | admin (home page) | daily report, warnings, scan history |
+| `/scanner` | admin, operator (the operator's home page) | camera scanner, instant result, recent scans |
+| `/admin/employees/new` | admin | add an employee (a one-time password is generated and shown once) |
 
-**The scanner.** `qr-scanner` decodes in a web worker on the device; no video leaves the phone or computer. It works on Android and iOS browsers and desktop webcams (it needs an https page, or localhost). States covered: asking permission, permission denied, no camera, camera in use, insecure page, other errors, each with what to do next; a camera picker when several exist (the choice is remembered); a torch button where the camera has one; and **Scan from a photo** for people who cannot use the live camera. Printed ID cards and phone screens both work. Before recording, the page asks for the operator's own location and shows plain-language reasons if the office check fails.
-
-**ID card downloads.** Drawn locally (nothing is uploaded). The QR is drawn from the module matrix, so it is sharp at any size, and is always black on white even in dark mode. PNG: credit-card proportions (85.6 × 54 mm at about 300 dpi). PDF: the same card as vector at real size (jsPDF, loaded only when someone presses the button).
-
-**Accessibility and motion.** Labelled controls, `aria-live` status messages, focus management in dialogs (Radix), contrast of at least 4.5:1 in light and dark, and `prefers-reduced-motion` turns the scan line, pop-ins and the success animation into plain end states.
+The scanner decodes in a web worker on the device (`qr-scanner`); it works on Android and iOS browsers and desktop webcams (an https page, or localhost, is required). It covers permission asked / denied, no camera, camera in use, insecure page, a camera picker, a torch button where the camera has one, and **Scan from a photo** for people who cannot use the live camera. Accessibility: labelled controls, `aria-live` status messages, contrast of at least 4.5:1 in light and dark, and `prefers-reduced-motion` turns the animations into plain end states.
 
 ### Trying it without Supabase
 
@@ -196,7 +182,7 @@ npx tsx apps/api/src/testing/dev-server.ts      # demo API on :4000, embedded Po
 npm run dev -w @teachgrow/web                    # web app on http://localhost:5173
 ```
 
-The demo seeds an invented office, an administrator, an operator, three employees (one inactive) and a lobby account, and prints how to sign in. It lives under `src/testing`, which the production build excludes. **Never point it at real data.**
+The demo seeds an invented office (at 10.0, 20.0, so a browser needs its location overridden to pass the check), an administrator, an operator, employees (one inactive) and a lobby account, and prints how to sign in. It lives under `src/testing`, which the production build excludes. **Never point it at real data.**
 
 ### Serving the web app
 
@@ -211,64 +197,57 @@ Referrer-Policy: same-origin
 X-Content-Type-Options: nosniff
 ```
 
-Note that the build tools (TypeScript, Vite, Tailwind) are development dependencies. The root `.npmrc` (`include=dev`, from `main`) keeps them installed even when a host sets `NODE_ENV=production`, which would otherwise skip them and fail the build; that was checked for the API's build on a clean clone, not for this app's build and not on a host.
+The build tools (TypeScript, Vite, Tailwind) are development dependencies. The root `.npmrc` (`include=dev`) keeps them installed even when a host sets `NODE_ENV=production`.
 
 ## Threat model
 
 | Threat | What stops it | What does not |
 | --- | --- | --- |
-| An operator or administrator records **themselves** with the scanner | Refused in the application and again by a database constraint; the attempt is logged | — |
-| A code is photographed or copied (it is a static printed code) | It proves nothing by itself: an operator must scan and confirm, the operator must prove **they** are at the office, the employee's name, ID and photo are on screen for the operator to compare, every scan records device and address, a copied code can be revoked or regenerated in one click, and an employee account cannot reach the scanner. A copy is rejected as the lobby code (`QR_INVALID`). | Somebody who shows a **copy** to an operator **at the office** looks like the real card; only the operator's visual check stands in the way. Without a photo on the profile (there is no upload feature yet) the card shows initials only. |
-| Remote operator account takeover | Recording needs a passing office check for the operator on every action (location, office network, optionally lobby QR and device), per-action single-use proof, audit trail | A stolen session used **from the office network** with spoofed GPS. Keep operator accounts few; deactivate promptly (effective on the next request). |
-| An operator on site records people who are not there | The audit trail and history show exactly who recorded what, from which device | Collusion on site is detected afterwards, not prevented. |
-| Replaying or double-sending a confirmation | Idempotency key, a scan that can be recorded once, a presence proof that can be spent once | — |
-| Two operators scanning the same person | Row locks inside the database; the second gets `ALREADY_CHECKED_IN` / `ALREADY_CHECKED_OUT` and the scan stays retryable | See _What was not verified_ |
-| Guessing a code | 256-bit; lookups by hash; unknown scans are logged and rate limited | — |
-| Database read access | Only hashes and nonces; a usable code needs the secret too | A leak of **both** the secret and the database lets an attacker compute valid codes. Regenerate all codes in that case. |
-| Administrators viewing codes | Allowed (they print the cards) but every view is audited | A malicious administrator can mint attendance anyway through corrections. |
-| Cross-site request forgery | Bearer tokens (not cookies) on every state-changing call; CSRF header and Origin check on the cookie endpoints | — |
-| Hostile text in names or codes | React escapes text; the QR is drawn from numbers, never from HTML; scanned text is never echoed or stored | — |
+| Marking attendance from home | The code is made only after a server-side location + network check, and lives ~90 s | Someone at the office who sends the code to a person elsewhere within that window (a screenshot). They must also be at the office to generate it, and the administrator scanning sees the person in front of them |
+| Photographing / re-sharing a code | Single use, ~90 s, replaced by a newer one, dead at midnight, bound to the employee | A screenshot sent to a colleague at the scanner within the window is the same as the person being there. The administrator compares the name on screen with who is in front of them |
+| Replaying a scan | The code is spent in the same transaction that records attendance; a repeat is refused and logged as a duplicate | — |
+| Two scanners at once | Row lock on the code inside the database; one wins, the other gets `QR_ALREADY_USED` | — |
+| Guessing a code | 256 bits; lookup by hash; unknown scans are logged and rate-limited | — |
+| Database read access | Only hashes; no secret exists that turns them into codes | — |
+| Forged location | The server compares the claimed fix with the office, its own clock and the real request address | Spoofed GPS from a device **on the office network** (the network check is the second factor) |
+| Admin account takeover | An administrator can record anyone, from anywhere; that is the requested design. Every scan is audited with the scanner, device and address; keep administrator accounts few | A stolen administrator session can mark people present until detected |
+| An employee scanning (or being scanned as) someone else | Employee accounts cannot reach the scanner (403, audited); nobody scans themselves | — |
+| Cross-site request forgery | Bearer tokens on every state-changing call | — |
 
 ## What was verified, and what was not
 
-**Verified by automated tests (all passing):** 60 database tests (constraints, immutability, RLS and column privileges, `qr_attendance_state` for every day type, `admin_qr_record` happy paths, late-rule parity and every refusal); 132 API integration tests across `qr-attendance.integration.test.ts` and `employee-qr.integration.test.ts` (every scenario below); 21 token unit tests; 106 web tests (API client, token refresh, scanner page flows with a stub camera, panels, management pages, routing and roles, ID-card drawing and a real PDF); the existing 780 integration, 269 API unit and 27 shared tests, unchanged, including the original 43 engine tests that exercise the refactored `check_in` / `check_out`.
+**Automated (all passing, run on 2026-11-12):** 908 integration tests (19 files, embedded Postgres 17 and an in-repo stand-in for Supabase Auth; 34 of them in `daily-qr.integration.test.ts`), 306 API unit tests, 27 shared tests and 95 web tests (Vitest, jsdom, Testing Library). Typecheck (shared, API, web), ESLint, Prettier and the production builds of the API and the web app are clean. The existing engine, verification, device, auth and office tests run unchanged, apart from the places that named the old 100 m default or scanned an ID card.
 
-| Requested scenario | Where |
+**Mutation checks** (a safeguard broken on purpose, the new tests run, the file restored byte for byte): accepting expired codes (3 tests failed), not spending the employee's verification (1), allowing a person to scan themselves (1), and letting employees into the scanner router (1, after the test was sharpened: the first version of that test still passed because the database function also refuses non-scanners, so it could not tell the two layers apart).
+
+**By hand in a real browser** (Chromium in the desktop app's browser pane, against the demo API with invented people; the pane has no camera, so the scanner was fed a canvas stream showing the real QR from the employee's screen, and the real decoder read it):
+
+- An employee 334 m from the office was refused, with *Location: Failed*, *Office Wi-Fi: OK* and "You are about 334 m from the office; you must be within 150 m"; at 56 m the check passed, *Generate Attendance QR* came alive, and a large QR appeared with *Expires in 1:29* and *Waiting for an administrator to scan…*.
+- A **different account**, an administrator, opened the dashboard, pressed **Scan Employee QR**, and the scanner read the code and recorded the check-in: name, employee ID, department, date, check-in time and status. The browser's location call was replaced by a counter and it was called **0 times** during all of this.
+- The employee's screen turned into *Checked in, recorded at 04:23 PM* without a reload, and offered a check-out code next.
+- Scanning the same code again said **Already scanned**, who it was, and when it was first recorded; scanning an expired code said **This QR code has expired**; both appeared in the history and in the dashboard's warnings.
+- The dashboard (present, late, absent, check-in times, warnings, history) and the phone layout of the employee page (375 px wide, no horizontal scroll).
+
+A scripted pass against the same running API used three employee accounts, an operator and an administrator: refused location (400 m), refused reuse of a verification, a replaced code (`QR_SUPERSEDED`), an employee refused at the scanner (403), a scan that tried to send a location (400), the operator and the administrator each recording a different employee, a duplicate (409), a web address and an unknown code (422), and the dashboard totals (3 present, 3 late, 2 duplicate warnings, 4 invalid or expired warnings).
+
+The scenarios the request lists:
+
+| Scenario | Where |
 | --- | --- |
-| Valid employee QR | scan → verify → confirm for check-in, check-out, admin and operator |
-| Invalid QR | malformed text, a web address, a code with one character changed, every other spelling of the last character, a well-formed code nobody was given, the lobby code |
-| Self-recording (not requested, found in review) | an operator and an administrator scanning their own code are refused and logged; somebody else can record an operator; nobody else is affected |
-| Duplicate QR | repeated scans record nothing; repeated confirmations are idempotent; a new key for a recorded scan is refused |
-| Revoked QR | at scan time and between scan and confirm |
-| Expired session | expired access token; expired scan; scan that ran out of time before confirming |
-| Unauthorized admin | employee, lobby account, deactivated operator, unauthenticated, operator on admin-only endpoints, one operator on another's scan |
-| Inactive employee | at scan time and between scan and confirm |
-| Duplicate check-in / check-out | two operators; the second is refused and nothing is recorded twice |
-| QR copied to another device | works only for an operator who passes the office check; dead after regeneration; useless to an employee |
-| Concurrent scans by multiple admins | see below |
-| Network failure during recording | connection lost before the attendance is written and after it is written but before the answer is saved: nothing recorded, scan still pending, proof unspent, no key kept, retry with the same key succeeds exactly once |
-
-**Verified by hand in a real browser** (Chromium in the desktop app's browser pane, against the demo API): sign-in, the whole scan → confirm → success loop, check-in then check-out then already-checked-out, an inactive employee, an unknown code, a refused office check (about 5.5 km away), the employee profile and QR, an ID-card PNG drawn on a real canvas, the administrator's list, dialog, regenerate and history, and the phone layout. The camera feed in that pane was a **canvas stream showing a genuine QR**, because the pane has no camera and blocks camera access; the QR decode ran for real in the `qr-scanner` worker. The browser's location was replaced by a fixed position. A bug found this way (a new sign-in being sent to the previous person's page) was fixed and has a regression test.
+| Admin scans from outside the office, off the office network, without any location | `daily-qr.integration.test.ts` ("records the attendance in one step, with no location and no Wi-Fi"; the scan body with `gps` is refused) |
+| Employee location / Wi-Fi failures name the failing layer | "refuses without a verification, and names the layer that failed" (200 m out, off-network) |
+| Different employee accounts, operator, administrator | employee, colleague, operator, tracked administrator across the file |
+| Expired, replayed, replaced, duplicate, unknown, malformed, lobby and old ID codes | the *a code that is not acceptable* and duplicate / expired tests |
+| One record per employee per day | duplicate and two-scanner tests; the database's own unique keys |
+| Regeneration rules | supersede, daily limit, spent verification |
+| Audit | `qr_attendance.recorded`, `daily_qr.generated`, no code in any log |
+| Dashboard | present / late / absent, warnings, history filters |
 
 **Not verified:**
 
-- **A real camera.** No physical webcam, Android phone or **iPhone/iOS Safari** was used; printed cards under glare, at an angle, or on a creased card are untested.
-- **A real Supabase stack** (Docker cannot start on the development machine): everything ran on embedded Postgres 17 and an in-repo stand-in for Supabase Auth, as in earlier phases.
-- **True parallel races.** The test database has one connection, so "two operators at the same instant" is tested as two operators one after the other plus the database's own guarantees (row locks on the day's record, unique indexes, the single-use proof). The locking was reasoned, not raced.
-- **The PDF's appearance.** It is checked to be a real PDF of the right page size with the right content calls; nobody has looked at a printed one.
-- **The lobby-code step of the scanner page** exists and is tested with a stub camera, but was not exercised in a real browser; the registered-**device** requirement is **not supported in the web scanner** (the page says so and does not offer the button), so a policy that adds `DEVICE` to `admin_scan_layers` is satisfiable only by a future mobile app.
-- **Nothing was deployed or run behind a reverse proxy.**
+- **A real camera and a real phone.** The web tests use a stand-in camera; nobody has scanned a real QR on screen from a real device (iOS Safari especially). An on-screen QR is a different thing to a printed one (brightness, glare, moiré).
+- **The Wi-Fi check against a real office network** (the real public address range is not known here), and **GPS accuracy on real laptops and phones**.
+- **True parallel races.** "Two scanners at once" runs against a single-connection embedded database; the guarantee is the row lock and the unique indexes, reasoned and tested in sequence.
+- **The real Supabase project, through the app.** The migration was rehearsed on that project first (a full generate-and-scan with its real employee and administrator rows, inside a transaction that was rolled back, nothing kept) and then applied on 2026-11-12. Nobody has yet signed in to the real app and generated a code there: that needs the real office location and network (see Operations).
+- Nothing was deployed or run behind a reverse proxy. `TRUST_PROXY` must be set correctly in production or every employee appears to come from the proxy's address and the network check is meaningless or bypassable.
 - Rate limits are per API instance.
-
-## Operations
-
-- **Setup:** set `EMPLOYEE_QR_SECRET` (and keep `QR_SIGNING_SECRET` different), apply the two migrations, then press **Issue missing codes** once for accounts created earlier.
-- **Operators:** create an account with role `attendance_operator` (`POST /api/admin/employees`), then give them the scanner page. They need to be on the office network and allow location in their browser.
-- **A lost or copied card:** QR management → the employee → **Revoke** (or **Regenerate** to replace it), then print a new card.
-- **Changing what an operator must prove:** edit `attendance_policies.admin_scan_layers` (GPS and NETWORK are always kept).
-
-## Notes for merging with Phase 6
-
-This work was cut from commit `313538f` and the Phase 6 session was editing the same folder at the time. Expect small, additive conflicts in `app.ts`, `routes/admin.ts`, `packages/shared/src/errors.ts` and `index.ts`, `config/env.ts` and `apps/api/.env.example`. `apps/api/src/attendance/idempotency.ts` is a verbatim copy of the Phase 6 helper at the same path, and `IDEMPOTENCY_KEY_REUSED` is added in the same place as in that session, so those should merge cleanly. **One real hazard:** migration `20261106000200` redefines `private.check_in` and `private.check_out` with `create or replace`; if Phase 6 also redefines them in a migration that sorts later, that later definition would silently drop the shared core. After merging, run the existing engine tests and this feature's database tests.
-
-`origin/main` had also moved since this branch was cut: `390f8e7` (root `.npmrc` with `include=dev`, a root `start` script, README hosting notes) and `c2545f8` (trusting the database's certificate authority: `config/env.ts`, `config/env.test.ts`, `db/pool.ts`, `.env.example`, README). Both are now merged into this branch. The only conflict was `README.md`, where the demo section and the hosting section were both kept, and the hosting section's "nothing to publish as static files yet" paragraph was rewritten because `apps/web/dist` is static output. `include=dev` should also keep this app's build tools (Vite, TypeScript, Tailwind, all dev dependencies) installed on a host that sets `NODE_ENV=production`; that was checked for the API's build on a clean clone, not for this app's build and not on a host.

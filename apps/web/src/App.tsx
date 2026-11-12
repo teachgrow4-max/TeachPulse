@@ -11,8 +11,11 @@ import { LoginPage } from './pages/login';
 import { ProfilePage } from './pages/profile';
 
 // The administrator's and operator's pages are only fetched by the people who open them.
-const QrManagementPage = lazy(() =>
-  import('./pages/qr-management').then((m) => ({ default: m.QrManagementPage })),
+const AttendancePage = lazy(() =>
+  import('./pages/attendance').then((m) => ({ default: m.AttendancePage })),
+);
+const AttendanceQrPage = lazy(() =>
+  import('./pages/attendance-qr').then((m) => ({ default: m.AttendanceQrPage })),
 );
 const AddEmployeePage = lazy(() =>
   import('./pages/add-employee').then((m) => ({ default: m.AddEmployeePage })),
@@ -80,11 +83,14 @@ export function App() {
         <Route element={<AppShell />}>
           <Route index element={<Home />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route element={<RequireRole roles={['employee', 'admin']} />}>
+            <Route path="/attendance-qr" element={<AttendanceQrPage />} />
+          </Route>
           <Route element={<RequireRole roles={['admin', 'attendance_operator']} />}>
             <Route path="/scanner" element={<ScannerPage />} />
           </Route>
           <Route element={<RequireRole roles={['admin']} />}>
-            <Route path="/admin/qr" element={<QrManagementPage />} />
+            <Route path="/admin/attendance" element={<AttendancePage />} />
             <Route path="/admin/employees/new" element={<AddEmployeePage />} />
           </Route>
           <Route

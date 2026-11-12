@@ -1,78 +1,52 @@
 import {
+  EMPLOYEE_QR_PREFIX,
   QR_PAYLOAD_PREFIX,
-  SCAN_REASON_MESSAGES,
-  VERIFICATION_LAYERS,
-  isScanReasonCode,
+  isErrorCode,
+  looksLikeDailyQr,
   type AttendanceStatus,
-  type ConfirmScanRequest,
-  type ConfirmScanResponse,
   type DetectedAction,
-  type LiveState,
+  type ErrorCode,
   type ListScansQuery,
+  type LiveState,
   type Paginated,
   type QrResult,
   type RoleName,
   type ScanDisplayStatus,
   type ScanLogDto,
-  type ScanReasonCode,
-  type ScanRejectionDetails,
+  type ScanRecorded,
+  type ScanRefusalDetails,
   type ScanRequest,
-  type ScanResolution,
-  type ScanTodayDto,
-  type ScanVerifyBody,
-  type VerifyResponse,
 } from '@teachgrow/shared';
 import { writeAudit } from '../audit/audit.js';
 import { loadIdentityById, type Identity } from '../auth/identity.js';
-import { withIdempotency, type Idempotent } from '../attendance/idempotency.js';
 import type { Db, Queryable } from '../db/pool.js';
-import type { EmployeeQrService } from '../employee-qr/service.js';
+import { hashDailyPayload } from '../daily-qr/token.js';
 import type { Clock } from '../lib/clock.js';
-import { AppError } from '../lib/errors.js';
+import { AppError, fromDbError } from '../lib/errors.js';
 import type { RequestMeta } from '../lib/request-meta.js';
-import { loadPolicyAt, requireActiveOffice } from '../office/repository.js';
-import { requiredLayers, type VerificationService } from '../verification/service.js';
 
 /**
- * The administrator-operated scanner: what an operator can do with an employee's QR code.
+ * The administrator-operated scanner.
  *
- *   scan     read a code. Logs the scan, says who it belongs to and what would happen
- *            (check in, check out, nothing to do). Changes no attendance.
- *   verify   the operator proves THEY are at the office (the same location / network / device
- *            layers as a check-in, under the policy's admin-scan setting).
- *   confirm  the operator confirms what the scan showed. Records the attendance through the
- *            same engine as an employee's own check-in, marked ADMIN_QR.
+ * An administrator (or attendance operator) scans the QR code on an employee's screen. The server
+ * finds the code by its hash, validates it and records the attendance in ONE step, through the
+ * same engine core as a self check-in, marked ADMIN_QR.
  *
- * Nothing toggles by itself: scanning the same code twice never changes attendance twice, because
- * only `confirm` does, once per scan, and only for the action the scan showed.
+ * The scanner's own location and network are never consulted: the employee proved they were at the
+ * office when they generated the code, and the code is short lived, single use and bound to the
+ * employee, the day and the action. Everything is decided here from the stored code, never from
+ * anything the client sends beyond the scanned text.
+ *
+ * Every scan is written to `qr_scan_logs`, refused ones included, so the dashboard can warn about
+ * duplicate, expired and unrecognised codes.
  */
-
-export const CONFIRM_ENDPOINT = 'POST /api/qr-attendance/scans/:id/confirm';
 
 export interface QrAttendanceServiceDeps {
   db: Db;
   clock: Clock;
-  qr: EmployeeQrService;
-  verification: VerificationService;
 }
 
-/** What `private.qr_attendance_state` answers. */
-interface AttendanceState {
-  workDate: string;
-  action: 'CHECK_IN' | 'CHECK_OUT' | 'ALREADY_CHECKED_OUT' | 'BLOCKED';
-  blockedReason: string | null;
-  record: {
-    id: string;
-    workDate: string;
-    status: AttendanceStatus;
-    liveState: LiveState;
-    isLate: boolean;
-    checkInAt: string | null;
-    checkOutAt: string | null;
-  } | null;
-}
-
-type ScanOutcome = { resolution: ScanResolution } | { rejected: AppError };
+type ScanOutcome = { recorded: ScanRecorded } | { rejected: AppError };
 
 interface LogInput {
   scannedBy: string;
@@ -81,20 +55,12 @@ interface LogInput {
   ip: string | null;
   requestId: string | null;
   employeeId: string | null;
-  codeId: string | null;
+  dailyQrId: string | null;
   hash: Uint8Array | null;
   qrResult: QrResult;
   detected: DetectedAction;
-  reason: string | null;
-  status: 'PENDING' | 'NO_ACTION' | 'REJECTED';
-  expiresAt: Date | null;
-}
-
-interface ScanRow {
-  id: string;
-  status: string;
-  detected_action: string;
-  expires_at: Date | string | null;
+  reason: string;
+  status: 'NO_ACTION' | 'REJECTED';
 }
 
 const iso = (value: Date | string): string => new Date(value).toISOString();
@@ -114,31 +80,44 @@ function describeScanner(
   };
 }
 
+/** Reasons that mean "valid code, but today holds nothing to record" rather than "bad code". */
+const NOTHING_TO_RECORD = new Set<string>([
+  'ALREADY_CHECKED_OUT',
+  'HOLIDAY',
+  'WEEKLY_OFF',
+  'ON_LEAVE',
+  'ACTIVE_BREAK',
+  'ALREADY_CHECKED_IN',
+]);
+
+interface TokenRow {
+  id: string;
+  employee_id: string;
+  status: 'ACTIVE' | 'USED' | 'SUPERSEDED';
+  used_at: Date | string | null;
+}
+
 export class QrAttendanceService {
   constructor(private readonly deps: QrAttendanceServiceDeps) {}
-
-  // -----------------------------------------------------------------------------------------
-  // 1. Scan
-  // -----------------------------------------------------------------------------------------
 
   async scan(
     operator: Identity,
     input: ScanRequest,
     ip: string | null,
     meta: RequestMeta,
-  ): Promise<ScanResolution> {
+  ): Promise<ScanRecorded> {
     const { db, clock } = this.deps;
 
     // A refused scan must still be written down, so the transaction commits and hands the refusal
     // back as a value; it is thrown only after the log row is safe.
     const outcome = await db.withTransaction((tx) =>
-      this.resolve(tx, operator, input, ip, meta, clock.now()),
+      this.attempt(tx, operator, input, ip, meta, clock.now()),
     );
     if ('rejected' in outcome) throw outcome.rejected;
-    return outcome.resolution;
+    return outcome.recorded;
   }
 
-  private async resolve(
+  private async attempt(
     tx: Queryable,
     operator: Identity,
     input: ScanRequest,
@@ -146,7 +125,6 @@ export class QrAttendanceService {
     meta: RequestMeta,
     now: Date,
   ): Promise<ScanOutcome> {
-    const { qr } = this.deps;
     const base = {
       scannedBy: operator.id,
       scannedAt: now,
@@ -155,304 +133,135 @@ export class QrAttendanceService {
       requestId: meta.requestId,
     };
 
-    const found = await qr.lookup(tx, input.payload);
-
-    // ---- not a code we issued ----------------------------------------------------------------
-    if (found.result === 'MALFORMED' || found.result === 'UNKNOWN') {
+    // ---- not a code we could have issued ---------------------------------------------------
+    if (!looksLikeDailyQr(input.payload)) {
       const scanId = await this.insertLog(tx, {
         ...base,
         employeeId: null,
-        codeId: null,
-        hash: found.result === 'UNKNOWN' ? found.hash : null,
-        qrResult: found.result,
+        dailyQrId: null,
+        hash: null,
+        qrResult: 'MALFORMED',
         detected: 'REJECTED',
         reason: 'EMPLOYEE_QR_INVALID',
         status: 'REJECTED',
-        expiresAt: null,
       });
-      const lobbyCode = input.payload.startsWith(`${QR_PAYLOAD_PREFIX}.`);
-      return {
-        rejected: new AppError(
-          'EMPLOYEE_QR_INVALID',
-          lobbyCode
-            ? 'That is the office QR code shown on the lobby screen, not an employee ID code.'
-            : undefined,
-          { details: { scanId } satisfies ScanRejectionDetails },
-        ),
-      };
+      let message: string | undefined;
+      if (input.payload.startsWith(`${QR_PAYLOAD_PREFIX}.`)) {
+        message =
+          'That is the office QR code shown on the lobby screen, not an employee’s attendance code.';
+      } else if (input.payload.startsWith(`${EMPLOYEE_QR_PREFIX}.`)) {
+        message =
+          'ID-card codes no longer record attendance. Ask the employee to generate their attendance QR code in the TeachGrow app.';
+      }
+      return { rejected: this.refusal('EMPLOYEE_QR_INVALID', { scanId }, message) };
     }
 
-    // ---- a code we issued: whose is it? --------------------------------------------------------
-    const code = found.code;
-    const person = await loadIdentityById(tx, code.employee_id);
+    const hash = hashDailyPayload(input.payload);
+    const found = (
+      await tx.query<TokenRow>(
+        'select id, employee_id, status, used_at from public.attendance_qr_tokens where token_hash = $1',
+        [hash],
+      )
+    ).rows[0];
+    if (!found) {
+      const scanId = await this.insertLog(tx, {
+        ...base,
+        employeeId: null,
+        dailyQrId: null,
+        hash,
+        qrResult: 'UNKNOWN',
+        detected: 'REJECTED',
+        reason: 'EMPLOYEE_QR_INVALID',
+        status: 'REJECTED',
+      });
+      return { rejected: this.refusal('EMPLOYEE_QR_INVALID', { scanId }) };
+    }
+
+    const person = await loadIdentityById(tx, found.employee_id);
     if (!person) throw new AppError('NOT_FOUND', 'That employee was not found.');
     const who = { employeeCode: person.employeeCode, fullName: person.fullName };
 
-    const refuse = async (
-      qrResult: QrResult,
-      error: ConstructorParameters<typeof AppError>[0],
-    ): Promise<ScanOutcome> => {
+    // ---- let the database decide, atomically -------------------------------------------------
+    // The function re-checks everything against the stored code under a row lock, so two scanners
+    // racing on one code cannot both record it. A refusal must not roll back the log row, hence
+    // the savepoint.
+    await tx.query('savepoint daily_qr_record');
+    try {
+      const { rows } = await tx.query<{
+        r: { scanId: string; eventId: number | string; recordId: string; action: string };
+      }>(
+        `select private.daily_qr_record($1::uuid, $2::uuid, $3::jsonb, $4::inet, $5, $6::timestamptz) as r`,
+        [found.id, operator.id, JSON.stringify(base.scanner), ip, meta.requestId, now],
+      );
+      await tx.query('release savepoint daily_qr_record');
+      const r = rows[0]!.r;
+      // Names the scan and the event, never the code.
+      await writeAudit(tx, {
+        action: 'qr_attendance.recorded',
+        actorId: operator.id,
+        actorRole: operator.role,
+        entityType: 'attendance_event',
+        entityId: String(r.eventId),
+        metadata: {
+          scan_id: r.scanId,
+          employee_id: person.id,
+          action: r.action,
+          source: 'ADMIN_QR',
+        },
+        ...meta,
+        at: now,
+      });
+      return { recorded: await this.recordedOf(tx, r.scanId, person) };
+    } catch (error) {
+      const domain = fromDbError(error);
+      if (!domain) throw error;
+      await tx.query('rollback to savepoint daily_qr_record');
+      await tx.query('release savepoint daily_qr_record');
+
+      const code = domain.code;
+      const qrResult: QrResult =
+        code === 'QR_EXPIRED'
+          ? 'EXPIRED'
+          : code === 'QR_ALREADY_USED'
+            ? 'USED'
+            : code === 'QR_SUPERSEDED'
+              ? 'SUPERSEDED'
+              : 'VALID';
+      const nothing = NOTHING_TO_RECORD.has(code);
       const scanId = await this.insertLog(tx, {
         ...base,
         employeeId: person.id,
-        codeId: code.id,
-        hash: found.hash,
+        dailyQrId: found.id,
+        hash,
         qrResult,
-        detected: 'REJECTED',
-        reason: error,
-        status: 'REJECTED',
-        expiresAt: null,
+        detected: nothing
+          ? code === 'ALREADY_CHECKED_OUT'
+            ? 'ALREADY_CHECKED_OUT'
+            : 'BLOCKED'
+          : 'REJECTED',
+        reason: code,
+        status: nothing ? 'NO_ACTION' : 'REJECTED',
       });
       return {
-        rejected: new AppError(error, undefined, {
-          details: { scanId, employee: who } satisfies ScanRejectionDetails,
+        rejected: this.refusal(code, {
+          scanId,
+          employee: who,
+          ...(code === 'QR_ALREADY_USED' && found.used_at
+            ? { firstRecordedAt: iso(found.used_at) }
+            : {}),
         }),
       };
-    };
-
-    // Nobody records their own attendance with the scanner: it checks fewer things than a check-in
-    // may require, so scanning yourself would be a way round the stricter policy. The attempt is
-    // kept on record, as a refusal.
-    if (person.id === operator.id) {
-      return refuse(found.result === 'REVOKED' ? 'REVOKED' : 'VALID', 'SELF_SCAN_FORBIDDEN');
     }
-    if (found.result === 'REVOKED') return refuse('REVOKED', 'EMPLOYEE_QR_REVOKED');
-    if (!person.isActive) return refuse('VALID', 'EMPLOYEE_INACTIVE');
-    if (!person.attendanceRequired || person.role === 'office_display') {
-      return refuse('VALID', 'ATTENDANCE_NOT_TRACKED');
-    }
-
-    // ---- valid and trackable: what would happen if the operator confirmed? ---------------------
-    const office = await requireActiveOffice(tx);
-    const policy = await loadPolicyAt(tx, now, office.timezone);
-    const state = await this.stateOf(tx, person.id, now);
-
-    let detected: Exclude<DetectedAction, 'REJECTED'>;
-    let reason: ScanReasonCode | null = null;
-    if (state.blockedReason && isScanReasonCode(state.blockedReason)) {
-      detected = 'BLOCKED';
-      reason = state.blockedReason;
-    } else if (state.action === 'ALREADY_CHECKED_OUT') {
-      detected = 'ALREADY_CHECKED_OUT';
-      reason = 'ALREADY_CHECKED_OUT';
-    } else if (state.action === 'CHECK_IN' || state.action === 'CHECK_OUT') {
-      detected = state.action;
-    } else {
-      // The database said BLOCKED without a reason we know. Refuse rather than guess.
-      throw new AppError('INTERNAL');
-    }
-
-    const pending = detected === 'CHECK_IN' || detected === 'CHECK_OUT';
-    const expiresAt = pending
-      ? new Date(now.getTime() + policy.verificationTtlSeconds * 1000)
-      : null;
-    const scanId = await this.insertLog(tx, {
-      ...base,
-      employeeId: person.id,
-      codeId: code.id,
-      hash: found.hash,
-      qrResult: 'VALID',
-      detected,
-      reason,
-      status: pending ? 'PENDING' : 'NO_ACTION',
-      expiresAt,
-    });
-
-    const layers = requiredLayers(policy, 'ADMIN_SCAN', input.scanner.kind);
-    return {
-      resolution: {
-        scanId,
-        scannedAt: now.toISOString(),
-        expiresAt: (expiresAt ?? now).toISOString(),
-        employee: {
-          id: person.id,
-          employeeCode: person.employeeCode,
-          fullName: person.fullName,
-          avatarUrl: person.avatarUrl,
-          department: person.department?.name ?? null,
-          designation: person.designation,
-          accountStatus: 'ACTIVE',
-        },
-        today: todayOf(state),
-        action: detected,
-        reason: reason ? { code: reason, message: SCAN_REASON_MESSAGES[reason] } : null,
-        requiredLayers: VERIFICATION_LAYERS.filter((layer) => layers.has(layer)),
-      },
-    };
   }
 
-  private async stateOf(tx: Queryable, employeeId: string, now: Date): Promise<AttendanceState> {
-    const { rows } = await tx.query<{ state: AttendanceState }>(
-      'select private.qr_attendance_state($1::uuid, $2::timestamptz) as state',
-      [employeeId, now],
-    );
-    return rows[0]!.state;
+  private refusal(code: ErrorCode, details: ScanRefusalDetails, message?: string): AppError {
+    return new AppError(isErrorCode(code) ? code : 'INTERNAL', message, { details });
   }
 
-  private async insertLog(tx: Queryable, v: LogInput): Promise<string> {
-    const { rows } = await tx.query<{ id: string }>(
-      `insert into public.qr_scan_logs
-         (scanned_by, employee_id, qr_code_id, token_hash, qr_result, detected_action, reason_code,
-          status, scanned_at, expires_at, scanner, client_ip, request_id)
-       values
-         ($1, $2, $3, $4, $5, $6, $7, $8, $9::timestamptz, $10::timestamptz, $11::jsonb, $12::inet, $13)
-       returning id`,
-      [
-        v.scannedBy,
-        v.employeeId,
-        v.codeId,
-        v.hash,
-        v.qrResult,
-        v.detected,
-        v.reason,
-        v.status,
-        v.scannedAt,
-        v.expiresAt,
-        JSON.stringify(v.scanner),
-        v.ip,
-        v.requestId,
-      ],
-    );
-    return rows[0]!.id;
-  }
-
-  // -----------------------------------------------------------------------------------------
-  // 2. The operator proves they are at the office
-  // -----------------------------------------------------------------------------------------
-
-  async verify(
-    operator: Identity,
-    scanId: string,
-    body: ScanVerifyBody,
-    ip: string | null,
-    meta: RequestMeta,
-  ): Promise<VerifyResponse> {
-    const { db, clock, verification } = this.deps;
-    await this.requirePending(db, operator.id, scanId, clock.now());
-
-    const outcome = await verification.verify({
-      identity: operator,
-      request: {
-        purpose: 'ADMIN_SCAN',
-        channel: body.channel,
-        gps: body.gps,
-        qr: body.qr,
-        device: body.device,
-      },
-      ip,
-      meta,
-    });
-
-    // Remember the latest attempt on the scan, pass or fail, so history shows why a scan did not
-    // end in attendance. (A scan that has meanwhile been recorded is left alone.)
-    await db.query(
-      `update public.qr_scan_logs
-       set office_verification_id = $2, office_verification_result = $3
-       where id = $1 and status = 'PENDING'`,
-      [
-        scanId,
-        outcome.verified ? outcome.response.verificationId : outcome.details.verificationId,
-        outcome.verified ? 'VERIFIED' : 'REJECTED',
-      ],
-    );
-
-    if (!outcome.verified) {
-      throw new AppError(
-        'VERIFICATION_FAILED',
-        outcome.details.reasons.map((r) => r.message).join(' '),
-        { details: outcome.details },
-      );
-    }
-    return outcome.response;
-  }
-
-  /** The scan must be this operator's, still waiting, and not out of time. */
-  private async requirePending(
-    q: Queryable,
-    operatorId: string,
-    scanId: string,
-    now: Date,
-  ): Promise<ScanRow> {
-    const { rows } = await q.query<ScanRow>(
-      `select id, status, detected_action, expires_at
-       from public.qr_scan_logs where id = $1 and scanned_by = $2`,
-      [scanId, operatorId],
-    );
-    const scan = rows[0];
-    // Somebody else's scan looks exactly like one that does not exist.
-    if (!scan) throw new AppError('NOT_FOUND', 'That scan was not found.');
-    if (scan.status === 'RECORDED') throw new AppError('SCAN_ALREADY_RECORDED');
-    if (scan.status !== 'PENDING') throw new AppError('SCAN_NOT_ACTIONABLE');
-    if (!scan.expires_at || new Date(scan.expires_at) <= now) throw new AppError('SCAN_EXPIRED');
-    return scan;
-  }
-
-  // -----------------------------------------------------------------------------------------
-  // 3. Confirm
-  // -----------------------------------------------------------------------------------------
-
-  async confirm(
-    operator: Identity,
-    scanId: string,
-    body: ConfirmScanRequest,
-    idempotencyKey: string,
-    meta: RequestMeta,
-  ): Promise<Idempotent<ConfirmScanResponse>> {
-    const { db, clock } = this.deps;
-    const now = clock.now();
-
-    // The key, the attendance, the scan's new state and the audit entry commit together or not at
-    // all. A failed attempt leaves nothing behind - not even its key - so it can be retried.
-    return db.withTransaction((tx) =>
-      withIdempotency<ConfirmScanResponse>(
-        tx,
-        {
-          employeeId: operator.id,
-          key: idempotencyKey,
-          endpoint: CONFIRM_ENDPOINT,
-          request: { scanId, action: body.action },
-          now,
-        },
-        async () => {
-          const { rows } = await tx.query<{
-            result: { scanId: string; eventId: number | string; recordId: string };
-          }>('select private.admin_qr_record($1::uuid, $2::uuid, $3, $4::timestamptz) as result', [
-            scanId,
-            operator.id,
-            body.action,
-            now,
-          ]);
-          const recorded = rows[0]!.result;
-          const response = await this.confirmationOf(tx, scanId);
-
-          await writeAudit(tx, {
-            action: 'qr_attendance.recorded',
-            actorId: operator.id,
-            actorRole: operator.role,
-            entityType: 'attendance_event',
-            entityId: String(recorded.eventId),
-            metadata: {
-              scan_id: scanId,
-              action: body.action,
-              employee_id: response.employee.id,
-              source: 'ADMIN_QR',
-            },
-            ...meta,
-            at: now,
-          });
-          return { status: 200, body: response };
-        },
-      ),
-    );
-  }
-
-  private async confirmationOf(tx: Queryable, scanId: string): Promise<ConfirmScanResponse> {
+  private async recordedOf(tx: Queryable, scanId: string, person: Identity): Promise<ScanRecorded> {
     const { rows } = await tx.query<{
       confirmed_at: Date | string;
       confirmed_action: 'CHECK_IN' | 'CHECK_OUT';
-      employee_id: string;
-      employee_code: string;
-      full_name: string;
       work_date: string;
       status: AttendanceStatus;
       is_late: boolean;
@@ -461,12 +270,10 @@ export class QrAttendanceService {
       check_out_at: Date | string | null;
       net_work_seconds: number | null;
     }>(
-      `select l.confirmed_at, l.confirmed_action, p.id as employee_id, p.employee_code, p.full_name,
-              r.work_date, r.status, r.is_late, r.live_state, r.check_in_at, r.check_out_at,
-              r.net_work_seconds
+      `select l.confirmed_at, l.confirmed_action, r.work_date::text as work_date, r.status, r.is_late,
+              r.live_state, r.check_in_at, r.check_out_at, r.net_work_seconds
        from public.qr_scan_logs l
        join public.attendance_records r on r.id = l.attendance_record_id
-       join public.profiles p on p.id = l.employee_id
        where l.id = $1`,
       [scanId],
     );
@@ -476,7 +283,14 @@ export class QrAttendanceService {
       action: row.confirmed_action,
       recordedAt: iso(row.confirmed_at),
       source: 'ADMIN_QR',
-      employee: { id: row.employee_id, employeeCode: row.employee_code, fullName: row.full_name },
+      employee: {
+        id: person.id,
+        employeeCode: person.employeeCode,
+        fullName: person.fullName,
+        department: person.department?.name ?? null,
+        designation: person.designation,
+        avatarUrl: person.avatarUrl,
+      },
       attendance: {
         workDate: row.work_date,
         status: row.status,
@@ -487,6 +301,32 @@ export class QrAttendanceService {
         netWorkSeconds: row.net_work_seconds,
       },
     };
+  }
+
+  private async insertLog(tx: Queryable, v: LogInput): Promise<string> {
+    const { rows } = await tx.query<{ id: string }>(
+      `insert into public.qr_scan_logs
+         (scanned_by, employee_id, daily_qr_id, token_hash, qr_result, detected_action, reason_code,
+          status, scanned_at, scanner, client_ip, request_id)
+       values
+         ($1, $2, $3, $4, $5, $6, $7, $8, $9::timestamptz, $10::jsonb, $11::inet, $12)
+       returning id`,
+      [
+        v.scannedBy,
+        v.employeeId,
+        v.dailyQrId,
+        v.hash,
+        v.qrResult,
+        v.detected,
+        v.reason,
+        v.status,
+        v.scannedAt,
+        JSON.stringify(v.scanner),
+        v.ip,
+        v.requestId,
+      ],
+    );
+    return rows[0]!.id;
   }
 
   // -----------------------------------------------------------------------------------------
@@ -561,18 +401,6 @@ export class QrAttendanceService {
 // ---------------------------------------------------------------------------------------------
 // Mapping
 // ---------------------------------------------------------------------------------------------
-
-function todayOf(state: AttendanceState): ScanTodayDto {
-  const record = state.record;
-  return {
-    workDate: record?.workDate ?? state.workDate,
-    status: record?.status ?? null,
-    liveState: record?.liveState ?? 'NONE',
-    checkInAt: isoOrNull(record?.checkInAt),
-    checkOutAt: isoOrNull(record?.checkOutAt),
-    isLate: record?.isLate ?? false,
-  };
-}
 
 /** `$1` is "now" (to tell an expired pending scan from a live one); callers bind the rest. */
 const LOG_COLUMNS = `

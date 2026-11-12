@@ -56,6 +56,12 @@ export const ERROR_STATUS = {
   SCAN_ACTION_MISMATCH: 409,
   SELF_SCAN_FORBIDDEN: 403,
 
+  // generated attendance QR codes
+  QR_EXPIRED: 422,
+  QR_ALREADY_USED: 409,
+  QR_SUPERSEDED: 422,
+  QR_LIMIT_REACHED: 429,
+
   // verification
   VERIFICATION_REQUIRED: 422,
   VERIFICATION_INVALID: 422,
@@ -118,7 +124,7 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   SHORT_BREAK_LIMIT: 'You have reached the maximum number of short breaks for today.',
 
   EMPLOYEE_QR_INVALID:
-    'This QR code is not recognised. Ask the employee to show their TeachGrow ID code.',
+    'This QR code is not recognised. Ask the employee to generate their attendance QR code in the TeachGrow app.',
   EMPLOYEE_QR_REVOKED:
     'This QR code has been revoked and can no longer be used. The employee needs a new one from HR.',
   EMPLOYEE_INACTIVE: 'This employee’s account is inactive, so attendance cannot be recorded.',
@@ -129,6 +135,13 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   SCAN_ACTION_MISMATCH: 'That action no longer matches this scan. Scan the code again.',
   SELF_SCAN_FORBIDDEN:
     'You cannot record your own attendance with the scanner. Ask another operator or an administrator to scan your code.',
+
+  QR_EXPIRED: 'This QR code has expired. Ask the employee to generate a new one.',
+  QR_ALREADY_USED: 'This QR code has already been scanned.',
+  QR_SUPERSEDED:
+    'This QR code was replaced by a newer one. Ask the employee to show the latest code.',
+  QR_LIMIT_REACHED:
+    'You have generated the maximum number of attendance QR codes for today. Ask an administrator for help.',
 
   VERIFICATION_REQUIRED: 'Verify that you are at the office first.',
   VERIFICATION_INVALID: 'This office verification is not valid. Please verify again.',

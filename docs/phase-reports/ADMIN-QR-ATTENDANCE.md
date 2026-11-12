@@ -4,6 +4,19 @@ Date: 2026-11-06 · Branch `feature/admin-qr-attendance` (cut from `main` at `31
 
 Design, flows, API and threat model: [ADMIN_QR_ATTENDANCE.md](../ADMIN_QR_ATTENDANCE.md). This report is what was built, what was found on the way, and what is still open.
 
+## Revision 2 (2026-11-12): the employee generates the code, the scanner is never location-checked
+
+The request changed the design after the first version was delivered. **Everything below this section describes version 1; where they differ, this section and [ADMIN_QR_ATTENDANCE.md](../ADMIN_QR_ATTENDANCE.md) are current.**
+
+- **Admins and operators are never checked for location or Wi-Fi.** The scanner endpoint ignores the scanner's position and address; a body that sends a location is refused (400); the web page never asks the browser for it.
+- **The employee proves presence instead**: `POST /api/attendance-qr/verify` (GPS inside the geofence, default now **150 m**, and the office network; the layers are their own policy setting, default GPS + network only), then `POST /api/attendance-qr/generate` makes a random `TGD1…` code bound to the employee, the day and one action, valid for `daily_qr_ttl_seconds` (default 90 s), single use, at most `daily_qr_max_per_day` (default 5) per day, each needing a fresh check. Only `SHA-256` is stored.
+- **Scanning is one step**: `POST /api/qr-attendance/scan` validates and records atomically (same engine core, source `ADMIN_QR`). The verify / confirm / challenge endpoints and the confirm button are gone. A repeat scan is refused as a duplicate and logged.
+- **Admin dashboard** (`/admin/attendance`): present, late, absent, on leave, check-in times, duplicate and invalid/expired warnings, scan history, CSV.
+- **Retired:** the permanent ID-card code can no longer record attendance (without anyone proving presence at scan time it would let a photograph record attendance from anywhere). The ID-card management page and the profile card were removed from the web app; the tables and endpoints were left in place, unused (listed in the design document).
+- Migration `20261107000100_daily_qr_attendance.sql` (adds no enum value, so it runs in one go). New: `attendance_qr_tokens`, `qr_scan_logs.daily_qr_id`, `private.issue_daily_qr`, `private.daily_qr_record`, three policy columns.
+- Tests added: 34 API integration tests (`daily-qr.integration.test.ts`) replacing the old two-step scanner tests (and the scan-history tests, moved there), plus web tests for the employee page, the dashboard, the scanner and the panels. Counts for this revision are in the design document's verification section and in the hand-off message.
+- **Applied to the real Supabase project on 2026-11-12**, after a rehearsal on it that was rolled back (the whole flow, on the project's real employee and administrator rows). **Not done in this revision:** nothing was tried with a real camera or a real phone, and nobody has yet signed in to the real app and generated a code there.
+
 ## Read this first
 
 - **There was no web app and no admin dashboard.** The request said to reuse "the existing admin dashboard"; the repository contained the API and the shared package only. This feature therefore **creates `apps/web`** (sign-in, profile, scanner, QR management). It is a foundation for Phases 7 and 8, not those phases.

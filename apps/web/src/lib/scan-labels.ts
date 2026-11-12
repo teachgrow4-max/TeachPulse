@@ -1,30 +1,7 @@
-import type {
-  DetectedAction,
-  ScanAction,
-  ScanDisplayStatus,
-  ScanLogDto,
-  ScanTodayDto,
-} from '@teachgrow/shared';
+import type { DetectedAction, ScanAction, ScanDisplayStatus, ScanLogDto } from '@teachgrow/shared';
 import type { BadgeTone } from '../components/ui/badge';
 
 /** Words for the things a scan can turn out to be, shared by the scanner and the history table. */
-
-export function todayLabel(today: ScanTodayDto): { text: string; tone: BadgeTone } {
-  switch (today.liveState) {
-    case 'CHECKED_OUT':
-      return { text: 'Checked out', tone: 'neutral' };
-    case 'ON_LUNCH':
-      return { text: 'On lunch break', tone: 'info' };
-    case 'ON_SHORT_BREAK':
-      return { text: 'On a short break', tone: 'info' };
-    case 'WORKING':
-      return today.isLate
-        ? { text: 'Working · arrived late', tone: 'warning' }
-        : { text: 'Working', tone: 'success' };
-    default:
-      return { text: 'Not checked in', tone: 'neutral' };
-  }
-}
 
 export const ACTION_LABEL: Record<ScanAction, string> = {
   CHECK_IN: 'Check in',
@@ -42,6 +19,10 @@ export const DETECTED_LABEL: Record<DetectedAction, string> = {
 const REASON_LABEL: Record<string, string> = {
   EMPLOYEE_QR_INVALID: 'Code not recognised',
   EMPLOYEE_QR_REVOKED: 'Revoked code',
+  QR_EXPIRED: 'Expired code',
+  QR_ALREADY_USED: 'Duplicate scan',
+  QR_SUPERSEDED: 'Replaced code',
+  SCAN_ACTION_MISMATCH: 'Code out of date',
   EMPLOYEE_INACTIVE: 'Inactive employee',
   ATTENDANCE_NOT_TRACKED: 'Attendance not tracked',
   SELF_SCAN_FORBIDDEN: 'Own code',
@@ -101,6 +82,20 @@ export function rejectionTitle(code: string): string {
       return 'QR code not recognised';
     case 'EMPLOYEE_QR_REVOKED':
       return 'This QR code was revoked';
+    case 'QR_EXPIRED':
+      return 'This QR code has expired';
+    case 'QR_ALREADY_USED':
+      return 'Already scanned';
+    case 'QR_SUPERSEDED':
+      return 'A newer QR code exists';
+    case 'SCAN_ACTION_MISMATCH':
+      return 'This QR code is out of date';
+    case 'ALREADY_CHECKED_OUT':
+      return 'Already checked out';
+    case 'HOLIDAY':
+    case 'WEEKLY_OFF':
+    case 'ON_LEAVE':
+      return 'No attendance today';
     case 'EMPLOYEE_INACTIVE':
       return 'Employee account is inactive';
     case 'ATTENDANCE_NOT_TRACKED':

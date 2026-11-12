@@ -4,10 +4,11 @@ import type { RoleName } from '@teachgrow/shared';
 export function homeFor(role: RoleName): string {
   switch (role) {
     case 'admin':
+      return '/admin/attendance';
     case 'attendance_operator':
       return '/scanner';
     case 'employee':
-      return '/profile';
+      return '/attendance-qr';
     default:
       return '/unsupported';
   }
@@ -16,7 +17,8 @@ export function homeFor(role: RoleName): string {
 /** Which accounts may open which pages (the pages themselves enforce it too; the API always does). */
 const ACCESS: Array<{ path: string; roles: readonly RoleName[] }> = [
   { path: '/scanner', roles: ['admin', 'attendance_operator'] },
-  { path: '/admin/qr', roles: ['admin'] },
+  { path: '/admin/attendance', roles: ['admin'] },
+  { path: '/attendance-qr', roles: ['employee', 'admin'] },
   { path: '/admin/employees', roles: ['admin'] },
   { path: '/profile', roles: ['employee', 'admin', 'attendance_operator'] },
   { path: '/change-password', roles: ['employee', 'admin', 'attendance_operator'] },

@@ -36,21 +36,31 @@ const signedInAs = (
 ) =>
   mockFetch({
     'POST /api/auth/refresh': json(200, sessionBody(user)),
-    'GET /api/employee-qr/me': json(200, {
-      status: 'ACTIVE',
-      payload: `TGE1.${'A'.repeat(43)}`,
-      generatedAt: null,
-      revokedAt: null,
-      holder: {
-        employeeCode: user.employeeCode,
-        fullName: user.fullName,
-        department: null,
-        designation: null,
-        avatarUrl: null,
+    'GET /api/attendance-qr/today': json(200, {
+      workDate: '2026-11-02',
+      next: 'CHECK_IN',
+      blockedReason: null,
+      verificationRequired: true,
+      live: null,
+      generatedToday: 0,
+      maxPerDay: 5,
+      ttlSeconds: 90,
+      attendance: {
+        status: null,
+        liveState: 'NONE',
+        checkInAt: null,
+        checkOutAt: null,
+        isLate: false,
       },
     }),
+    'GET /api/admin/attendance/daily': json(200, {
+      date: '2026-11-02',
+      isToday: true,
+      summary: { total: 0, present: 0, late: 0, absent: 0, onLeave: 0 },
+      warnings: { duplicateScans: 0, invalidOrExpiredScans: 0 },
+      rows: [],
+    }),
     'GET /api/qr-attendance/recent': json(200, { items: [] }),
-    'GET /api/admin/employee-qr': json(200, { items: [], page: 1, pageSize: 25, total: 0 }),
     'GET /api/admin/departments': json(200, { items: [] }),
     ...extra,
   });
@@ -80,7 +90,7 @@ describe('signing in', () => {
     expect(await screen.findByRole('button', { name: 'Sign in' })).toBeInTheDocument();
   });
 
-  it('shows an employee their profile after they sign in', async () => {
+  it('opens an employee on their Attendance QR after they sign in', async () => {
     const user = userEvent.setup();
     mockFetch({
       'POST /api/auth/refresh': json(401, { error: { code: 'UNAUTHENTICATED', message: '' } }),
@@ -93,17 +103,21 @@ describe('signing in', () => {
         });
         return json(200, sessionBody(employee));
       },
-      'GET /api/employee-qr/me': json(200, {
-        status: 'ACTIVE',
-        payload: `TGE1.${'A'.repeat(43)}`,
-        generatedAt: null,
-        revokedAt: null,
-        holder: {
-          employeeCode: 'E-1001',
-          fullName: 'Priya Sharma',
-          department: null,
-          designation: null,
-          avatarUrl: null,
+      'GET /api/attendance-qr/today': json(200, {
+        workDate: '2026-11-02',
+        next: 'CHECK_IN',
+        blockedReason: null,
+        verificationRequired: true,
+        live: null,
+        generatedToday: 0,
+        maxPerDay: 5,
+        ttlSeconds: 90,
+        attendance: {
+          status: null,
+          liveState: 'NONE',
+          checkInAt: null,
+          checkOutAt: null,
+          isLate: false,
         },
       }),
     });
@@ -111,8 +125,8 @@ describe('signing in', () => {
     await user.type(await screen.findByLabelText('Email'), 'priya@demo.test');
     await user.type(screen.getByLabelText('Password'), 'Demo-Passw0rd!');
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
-    expect(await screen.findByRole('heading', { name: 'Priya Sharma' })).toBeInTheDocument();
-    expect(await screen.findByRole('img', { name: /QR code for/ })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Attendance QR' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Generate Attendance QR/ })).toBeDisabled();
   });
 
   it('does not send the next person to a page that was meant for the last one', async () => {
@@ -120,17 +134,21 @@ describe('signing in', () => {
     mockFetch({
       'POST /api/auth/refresh': json(401, { error: { code: 'UNAUTHENTICATED', message: '' } }),
       'POST /api/auth/login': json(200, sessionBody(employee)),
-      'GET /api/employee-qr/me': json(200, {
-        status: 'ACTIVE',
-        payload: `TGE1.${'A'.repeat(43)}`,
-        generatedAt: null,
-        revokedAt: null,
-        holder: {
-          employeeCode: 'E-1001',
-          fullName: 'Priya Sharma',
-          department: null,
-          designation: null,
-          avatarUrl: null,
+      'GET /api/attendance-qr/today': json(200, {
+        workDate: '2026-11-02',
+        next: 'CHECK_IN',
+        blockedReason: null,
+        verificationRequired: true,
+        live: null,
+        generatedToday: 0,
+        maxPerDay: 5,
+        ttlSeconds: 90,
+        attendance: {
+          status: null,
+          liveState: 'NONE',
+          checkInAt: null,
+          checkOutAt: null,
+          isLate: false,
         },
       }),
     });
@@ -139,8 +157,8 @@ describe('signing in', () => {
     await user.type(await screen.findByLabelText('Email'), 'priya@demo.test');
     await user.type(screen.getByLabelText('Password'), 'Demo-Passw0rd!');
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
-    // an employee lands on their profile, not on the operator's scanner they cannot open
-    expect(await screen.findByRole('heading', { name: 'Priya Sharma' })).toBeInTheDocument();
+    // an employee lands on their own page, not on the operator's scanner they cannot open
+    expect(await screen.findByRole('heading', { name: 'Attendance QR' })).toBeInTheDocument();
     expect(screen.queryByText('You do not have access to this page')).toBeNull();
   });
 
@@ -200,46 +218,53 @@ describe('signing in', () => {
       currentPassword: 'Temp-Passw0rd-1',
       newPassword: 'Brand-New-Passw0rd',
     });
-    expect(await screen.findByRole('heading', { name: 'Priya Sharma' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Attendance QR' })).toBeInTheDocument();
   });
 });
 
 describe('who sees what', () => {
-  it('lets an employee see their profile but not the scanner', async () => {
+  it('lets an employee see their Attendance QR and profile but not the scanner', async () => {
     signedInAs(employee);
     renderApp(<App />, { auth: true, route: '/scanner' });
     expect(await screen.findByText('You do not have access to this page')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'QR attendance' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'QR management' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Scan QR' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Attendance' })).toBeNull();
+    expect(screen.getAllByRole('link', { name: 'Attendance QR' }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('link', { name: 'My profile' }).length).toBeGreaterThan(0);
   });
 
-  it('keeps an employee out of QR management too', async () => {
+  it('keeps an employee out of the attendance dashboard', async () => {
     signedInAs(employee);
-    renderApp(<App />, { auth: true, route: '/admin/qr' });
+    renderApp(<App />, { auth: true, route: '/admin/attendance' });
     expect(await screen.findByText('You do not have access to this page')).toBeInTheDocument();
   });
 
-  it('opens an attendance operator on the scanner, with no QR management', async () => {
+  it('opens an attendance operator on the scanner, with no dashboard', async () => {
     signedInAs(operator);
     renderApp(<App />, { auth: true, route: '/' });
-    expect(await screen.findByRole('heading', { name: 'QR attendance' })).toBeInTheDocument();
-    expect(screen.getAllByRole('link', { name: 'QR attendance' }).length).toBeGreaterThan(0);
-    expect(screen.queryByRole('link', { name: 'QR management' })).toBeNull();
+    expect(await screen.findByRole('heading', { name: 'Scan employee QR' })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'Scan QR' }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('link', { name: 'Attendance' })).toBeNull();
   });
 
-  it('keeps an operator out of QR management', async () => {
+  it('keeps an operator out of the attendance dashboard', async () => {
     signedInAs(operator);
-    renderApp(<App />, { auth: true, route: '/admin/qr' });
+    renderApp(<App />, { auth: true, route: '/admin/attendance' });
     expect(await screen.findByText('You do not have access to this page')).toBeInTheDocument();
   });
 
-  it('gives an administrator the scanner and QR management', async () => {
+  it('opens an administrator on the attendance dashboard, with the scanner one click away', async () => {
     signedInAs(admin);
-    renderApp(<App />, { auth: true, route: '/admin/qr' });
-    expect(await screen.findByRole('heading', { name: 'QR management' })).toBeInTheDocument();
-    expect(screen.getAllByRole('link', { name: 'QR attendance' }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('link', { name: 'QR management' }).length).toBeGreaterThan(0);
+    renderApp(<App />, { auth: true, route: '/' });
+    expect(
+      await screen.findByRole('heading', { name: 'Attendance management' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Scan Employee QR/ })).toHaveAttribute(
+      'href',
+      '/scanner',
+    );
+    expect(screen.getAllByRole('link', { name: 'Scan QR' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('link', { name: 'Attendance' }).length).toBeGreaterThan(0);
   });
 
   it('tells the lobby screen account that this app is not for it', async () => {

@@ -1,21 +1,15 @@
 import { z } from 'zod';
-import {
-  CHANNELS,
-  type AttendanceStatus,
-  type LiveState,
-  type RoleName,
-  type VerificationLayer,
-} from './enums.js';
+import { CHANNELS, type RoleName } from './enums.js';
 import type { Paginated } from './employees.js';
 import { isoDateSchema, paginationSchema, uuidSchema } from './schemas.js';
-import { deviceEvidenceSchema, gpsEvidenceSchema, qrEvidenceSchema } from './verification.js';
 
 /**
- * Employee QR codes and the administrator-operated scanner.
+ * The administrator-operated scanner's request and its history, and the retired ID-card codes.
  *
- * Every employee has one personal QR code (printable on an ID card). An administrator or attendance
- * operator scans it, sees whose it is and what will happen, and confirms. The attendance goes into
- * the same records as a normal check-in, marked as coming from ADMIN_QR.
+ * Attendance is now recorded from the short-lived code an employee generates (see daily-qr.ts):
+ * the scanner reads it and the server records the attendance in one step. The permanent ID-card
+ * code (`TGE1.…`) below is NO LONGER ACCEPTED by the scanner; its tables and types remain so that
+ * history is not lost.
  *
  * Not to be confused with the OFFICE QR (`TG1.…`), the rotating code on the lobby screen that an
  * employee scans to prove they are in the building.
@@ -43,13 +37,16 @@ export type EmployeeQrState = EmployeeQrStatus | 'NONE';
 // Scans
 // ---------------------------------------------------------------------------------------------
 
-/** How a scan stands. EXPIRED is derived (a PENDING scan nobody confirmed in time). */
+/**
+ * How a scan stands. A scan is now recorded or refused at once; PENDING (and the derived EXPIRED)
+ * only exist on scans made by the earlier two-step ID-card scanner.
+ */
 export const SCAN_STATUSES = ['PENDING', 'RECORDED', 'NO_ACTION', 'REJECTED'] as const;
 export type ScanStatus = (typeof SCAN_STATUSES)[number];
 export const SCAN_DISPLAY_STATUSES = [...SCAN_STATUSES, 'EXPIRED'] as const;
 export type ScanDisplayStatus = (typeof SCAN_DISPLAY_STATUSES)[number];
 
-/** The two things an operator can confirm. */
+/** The two actions a scan can record. */
 export const SCAN_ACTIONS = ['CHECK_IN', 'CHECK_OUT'] as const;
 export type ScanAction = (typeof SCAN_ACTIONS)[number];
 
@@ -63,25 +60,16 @@ export const DETECTED_ACTIONS = [
 ] as const;
 export type DetectedAction = (typeof DETECTED_ACTIONS)[number];
 
-export const QR_RESULTS = ['VALID', 'REVOKED', 'UNKNOWN', 'MALFORMED'] as const;
+export const QR_RESULTS = [
+  'VALID',
+  'REVOKED',
+  'UNKNOWN',
+  'MALFORMED',
+  'EXPIRED',
+  'USED',
+  'SUPERSEDED',
+] as const;
 export type QrResult = (typeof QR_RESULTS)[number];
-
-/** Why a valid scan has nothing to confirm. Also the reason stored on the scan log. */
-export const SCAN_REASON_MESSAGES = {
-  ALREADY_CHECKED_OUT: 'This employee has already checked out today.',
-  HOLIDAY: 'Today is a company holiday, so attendance cannot be recorded.',
-  WEEKLY_OFF: 'Today is a weekly off day, so attendance cannot be recorded.',
-  ON_LEAVE: 'This employee is on approved leave today, so attendance cannot be recorded.',
-  ACTIVE_BREAK:
-    'This employee is on a break. They must end it before checking out, unless HR has allowed checkout during a break.',
-  ALREADY_CHECKED_IN:
-    'This employee’s day was closed without a check-out. An administrator has to correct it.',
-} as const;
-export type ScanReasonCode = keyof typeof SCAN_REASON_MESSAGES;
-
-export function isScanReasonCode(value: string): value is ScanReasonCode {
-  return Object.prototype.hasOwnProperty.call(SCAN_REASON_MESSAGES, value);
-}
 
 /** Describes the device in the operator's hands. Declared by the client, so informational only. */
 export const scannerInfoSchema = z.strictObject({
@@ -101,88 +89,6 @@ export const scanRequestSchema = z.strictObject({
 });
 export type ScanRequest = z.input<typeof scanRequestSchema>;
 
-/** The operator's own presence evidence. The purpose (ADMIN_SCAN) is implied by the endpoint. */
-export const scanVerifyRequestSchema = z.strictObject({
-  channel: z.enum(CHANNELS),
-  gps: gpsEvidenceSchema.optional(),
-  qr: qrEvidenceSchema.optional(),
-  device: deviceEvidenceSchema.optional(),
-});
-export type ScanVerifyRequest = z.input<typeof scanVerifyRequestSchema>;
-export type ScanVerifyBody = z.output<typeof scanVerifyRequestSchema>;
-
-/** Ask for a one-time challenge for the operator's registered device (ADMIN_SCAN). */
-export const scannerChallengeRequestSchema = z.strictObject({ deviceId: uuidSchema });
-
-/** The operator confirms what the scan showed. The server refuses if it no longer matches. */
-export const confirmScanRequestSchema = z.strictObject({ action: z.enum(SCAN_ACTIONS) });
-export type ConfirmScanRequest = z.input<typeof confirmScanRequestSchema>;
-
-export interface ScanEmployeeCard {
-  id: string;
-  employeeCode: string;
-  fullName: string;
-  avatarUrl: string | null;
-  department: string | null;
-  designation: string | null;
-  accountStatus: 'ACTIVE' | 'INACTIVE';
-}
-
-export interface ScanTodayDto {
-  workDate: string;
-  /** null while nothing has happened today. */
-  status: AttendanceStatus | null;
-  liveState: LiveState;
-  checkInAt: string | null;
-  checkOutAt: string | null;
-  isLate: boolean;
-}
-
-export interface ScanReasonDto {
-  code: ScanReasonCode;
-  message: string;
-}
-
-/** Body of a successful `POST /api/qr-attendance/scan`. */
-export interface ScanResolution {
-  scanId: string;
-  scannedAt: string;
-  /** The operator has until then to confirm. */
-  expiresAt: string;
-  employee: ScanEmployeeCard;
-  today: ScanTodayDto;
-  /** CHECK_IN / CHECK_OUT await confirmation; the others are shown and nothing more. */
-  action: Exclude<DetectedAction, 'REJECTED'>;
-  reason: ScanReasonDto | null;
-  /** The presence layers the operator must pass before confirming (their own, not the employee's). */
-  requiredLayers: VerificationLayer[];
-}
-
-/** `error.details` of a scan that was refused (unknown, revoked, inactive …). */
-export interface ScanRejectionDetails {
-  scanId: string;
-  /** Present when the code did identify somebody (revoked, inactive), so staff know who to help. */
-  employee?: { employeeCode: string; fullName: string };
-}
-
-/** Body of a successful `POST /api/qr-attendance/scans/:id/confirm`. */
-export interface ConfirmScanResponse {
-  scanId: string;
-  action: ScanAction;
-  recordedAt: string;
-  source: 'ADMIN_QR';
-  employee: { id: string; employeeCode: string; fullName: string };
-  attendance: {
-    workDate: string;
-    status: AttendanceStatus;
-    isLate: boolean;
-    liveState: LiveState;
-    checkInAt: string | null;
-    checkOutAt: string | null;
-    netWorkSeconds: number | null;
-  };
-}
-
 export interface ScanLogPerson {
   id: string;
   employeeCode: string;
@@ -201,7 +107,7 @@ export interface ScanLogDto {
   scannedBy: ScanLogPerson & { role: RoleName };
   confirmedAt: string | null;
   confirmedAction: ScanAction | null;
-  /** The operator's own presence check: the last attempt made for this scan. */
+  /** Only on scans made by the earlier ID-card scanner, whose operator had to prove their location. */
   officeVerification: 'VERIFIED' | 'REJECTED' | null;
   attendanceEventId: string | null;
   scanner: { kind?: string; label?: string; camera?: string; userAgent?: string };

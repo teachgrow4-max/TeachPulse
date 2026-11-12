@@ -201,12 +201,13 @@ describe('what is stored', () => {
     const res = await request(other).get('/api/employee-qr/me').set(bearer(s.tok.employee));
     expect(res.status).toBe(409);
     expect(res.body.error.message).toMatch(/regenerated/);
-    // ...yet the printed card still scans, because scanning needs only the stored hash.
+    // ...and the scanner no longer takes ID-card codes at all, whoever holds the secret.
     const scan = await request(other)
       .post('/api/qr-attendance/scan')
       .set(bearer(s.tok.operator))
       .send({ payload, scanner: { kind: 'WEB' } });
-    expect(scan.status).toBe(200);
+    expect(scan.status).toBe(422);
+    expect(scan.body.error.code).toBe('EMPLOYEE_QR_INVALID');
   });
 });
 
@@ -360,8 +361,9 @@ describe('administrators looking after codes', () => {
       expect((await s.get('/api/employee-qr/me', s.tok.employee)).body.payload).toBe(
         res.body.payload,
       );
-      expect((await s.scan(old)).body.error.code).toBe('EMPLOYEE_QR_REVOKED');
-      expect((await s.scan(res.body.payload)).status).toBe(200);
+      // ID-card codes no longer record attendance, old or new: the scanner does not recognise them.
+      expect((await s.scan(old)).body.error.code).toBe('EMPLOYEE_QR_INVALID');
+      expect((await s.scan(res.body.payload)).body.error.code).toBe('EMPLOYEE_QR_INVALID');
     });
 
     it('is audited, naming the codes but never their contents', async () => {
@@ -456,7 +458,7 @@ describe('administrators looking after codes', () => {
         revoked_by: s.admin.id,
         revoke_reason: 'ID card reported lost',
       });
-      expect((await s.scan(payload)).body.error.code).toBe('EMPLOYEE_QR_REVOKED');
+      expect((await s.scan(payload)).body.error.code).toBe('EMPLOYEE_QR_INVALID');
 
       // The employee is told, and no one quietly gives them a replacement.
       const mine = await s.get('/api/employee-qr/me', s.tok.employee);
@@ -550,7 +552,7 @@ describe('administrators looking after codes', () => {
     });
 
     it('lets an operator do nothing here, even though they can scan', async () => {
-      expect((await s.scan(await s.codeOf(s.employee), s.tok.operator)).status).toBe(200);
+      expect((await s.get('/api/qr-attendance/recent', s.tok.operator)).status).toBe(200);
       expect((await s.get(`/api/admin/employee-qr/${s.employee.id}`, s.tok.operator)).status).toBe(
         403,
       );
@@ -571,133 +573,3 @@ describe('administrators looking after codes', () => {
 });
 
 // =============================================================================================
-describe('scan history', () => {
-  let recordedScanId: string;
-  let refusedScanId: string;
-  let expiredScanId: string;
-
-  beforeEach(async () => {
-    const mine = await s.codeOf(s.employee);
-    ({
-      scan: { scanId: recordedScanId },
-    } = await s.record(mine, 'CHECK_IN'));
-
-    h.clock.set(new Date(T0 + 60_000));
-    refusedScanId = (await s.scan('definitely not a code')).body.error.details.scanId as string;
-    h.clock.set(new Date(T0 + 120_000));
-    expiredScanId = (await s.scan(await s.codeOf(s.colleague), s.tok.admin)).body.scanId as string;
-    h.clock.set(new Date(T0 + 300_000)); // well past the colleague's two minutes
-  });
-
-  const history = async (query = '') => {
-    const res = await s.get(`/api/admin/qr-scans${query ? `?${query}` : ''}`, s.tok.admin);
-    expect(res.status).toBe(200);
-    return res.body as {
-      items: Array<{
-        id: string;
-        status: string;
-        qrResult: string;
-        detectedAction: string;
-        confirmedAction: string | null;
-        officeVerification: string | null;
-        attendanceEventId: string | null;
-        employee: { id: string } | null;
-        scannedBy: { id: string; role: string; fullName: string };
-        scanner: { label?: string };
-        clientIp: string | null;
-      }>;
-      total: number;
-    };
-  };
-
-  it('lists every scan, newest first, with who recorded it and what became of it', async () => {
-    const res = await history();
-    expect(res.total).toBe(3);
-    expect(res.items.map((i) => i.id)).toEqual([expiredScanId, refusedScanId, recordedScanId]);
-
-    const [expired, refused, recorded] = res.items;
-    expect(recorded).toMatchObject({
-      status: 'RECORDED',
-      qrResult: 'VALID',
-      detectedAction: 'CHECK_IN',
-      confirmedAction: 'CHECK_IN',
-      officeVerification: 'VERIFIED',
-      employee: { id: s.employee.id },
-      scannedBy: { id: s.operator.id, role: 'attendance_operator', fullName: s.operator.fullName },
-      scanner: { label: 'Front desk' },
-      clientIp: '127.0.0.1',
-    });
-    expect(recorded!.attendanceEventId).toBe((await s.events(s.employee.id))[0]!.id);
-    expect(refused).toMatchObject({
-      status: 'REJECTED',
-      qrResult: 'MALFORMED',
-      employee: null,
-      confirmedAction: null,
-    });
-    expect(expired).toMatchObject({
-      status: 'EXPIRED',
-      employee: { id: s.colleague.id },
-      scannedBy: { id: s.admin.id, role: 'admin' },
-      attendanceEventId: null,
-    });
-  });
-
-  it('filters by employee, by who scanned, and by outcome', async () => {
-    const ids = async (q: string) => (await history(q)).items.map((i) => i.id);
-    expect(await ids(`employeeId=${s.employee.id}`)).toEqual([recordedScanId]);
-    expect(await ids(`employeeId=${s.colleague.id}`)).toEqual([expiredScanId]);
-    expect(await ids(`scannedBy=${s.admin.id}`)).toEqual([expiredScanId]);
-    expect(await ids(`scannedBy=${s.operator.id}`)).toEqual([refusedScanId, recordedScanId]);
-    expect(await ids('status=RECORDED')).toEqual([recordedScanId]);
-    expect(await ids('status=REJECTED')).toEqual([refusedScanId]);
-    expect(await ids('status=EXPIRED')).toEqual([expiredScanId]);
-    expect(await ids('status=PENDING')).toEqual([]);
-    expect(await ids(`employeeId=${s.employee.id}&status=EXPIRED`)).toEqual([]);
-  });
-
-  it('filters by date, as calendar days at the office', async () => {
-    const ids = async (q: string) => (await history(q)).items.map((i) => i.id);
-    const all = [expiredScanId, refusedScanId, recordedScanId];
-    expect(await ids('from=2026-11-02&to=2026-11-02')).toEqual(all);
-    expect(await ids('from=2026-11-03')).toEqual([]);
-    expect(await ids('to=2026-11-01')).toEqual([]);
-    expect(await ids('from=2026-11-01&to=2026-11-30')).toEqual(all);
-
-    // 22:00 UTC on the 2nd is already 03:30 on the 3rd in Kolkata: the office's day decides.
-    h.clock.set(new Date('2026-11-02T22:00:00Z'));
-    await s.refreshTokens();
-    const nightScan = (await s.scan(await s.codeOf(s.colleague))).body.scanId as string;
-    expect(await ids('from=2026-11-03&to=2026-11-03')).toEqual([nightScan]);
-    expect(await ids('from=2026-11-02&to=2026-11-02')).toEqual(all);
-  });
-
-  it('pages through the results', async () => {
-    const first = await history('pageSize=2&page=1');
-    const second = await history('pageSize=2&page=2');
-    expect(first.total).toBe(3);
-    expect(first.items).toHaveLength(2);
-    expect(second.items).toHaveLength(1);
-  });
-
-  it('rejects nonsense in the query', async () => {
-    for (const q of [
-      'from=yesterday',
-      'from=2026-11-05&to=2026-11-01',
-      'status=LOST',
-      'employeeId=nope',
-      'page=0',
-    ]) {
-      expect((await s.get(`/api/admin/qr-scans?${q}`, s.tok.admin)).status, q).toBe(400);
-    }
-  });
-
-  it('shows the scan history of an employee to nobody but administrators', async () => {
-    expect((await s.get('/api/admin/qr-scans', s.tok.employee)).status).toBe(403);
-    expect((await s.get('/api/admin/qr-scans', s.tok.operator)).status).toBe(403);
-  });
-
-  it('feeds the last-scan column of the code list', async () => {
-    const list = await s.get(`/api/admin/employee-qr?search=${s.employee.code}`, s.tok.admin);
-    expect(new Date(list.body.items[0].lastScanAt).getTime()).toBe(T0);
-  });
-});

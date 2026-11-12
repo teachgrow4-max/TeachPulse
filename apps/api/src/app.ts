@@ -13,6 +13,8 @@ import { WebAuthnVerifier } from './devices/webauthn.js';
 import { EmployeeQrService } from './employee-qr/service.js';
 import { EmployeeService } from './employees/service.js';
 import { OfficeService } from './office/service.js';
+import { DailyAttendanceReportService } from './attendance/daily-report.js';
+import { DailyQrService } from './daily-qr/service.js';
 import { QrAttendanceService } from './qr-attendance/service.js';
 import { QrService } from './verification/qr-service.js';
 import { VerificationService } from './verification/service.js';
@@ -27,6 +29,7 @@ import { adminRouter } from './routes/admin.js';
 import { attendanceRouter } from './routes/attendance.js';
 import { authRouter } from './routes/auth.js';
 import { devicesRouter } from './routes/devices.js';
+import { dailyQrRouter } from './routes/daily-qr.js';
 import { employeeQrRouter } from './routes/employee-qr.js';
 import { healthRouter } from './routes/health.js';
 import { officeRouter } from './routes/office.js';
@@ -109,12 +112,9 @@ export function createApp({
     attestation: attestation ?? noAttestation,
   });
   const verificationService = new VerificationService({ db, clock, qr: qrService, webauthn });
-  const qrAttendanceService = new QrAttendanceService({
-    db,
-    clock,
-    qr: employeeQrService,
-    verification: verificationService,
-  });
+  const qrAttendanceService = new QrAttendanceService({ db, clock });
+  const dailyQrService = new DailyQrService({ db, clock, verification: verificationService });
+  const dailyReportService = new DailyAttendanceReportService({ db, clock });
 
   /** Per signed-in person; falls back to the client IP if (unexpectedly) unauthenticated. */
   const perUser = (req: Request): string => req.auth?.userId ?? ipKeyGenerator(req.ip ?? '');
@@ -184,6 +184,7 @@ export function createApp({
       devices: deviceService,
       employeeQr: employeeQrService,
       qrAttendance: qrAttendanceService,
+      dailyReport: dailyReportService,
       userLimiter: createRateLimiter({
         windowMs: 60_000,
         limit: env.USER_RATE_LIMIT_PER_MIN,
@@ -210,14 +211,27 @@ export function createApp({
     qrAttendanceRouter({
       auth,
       scanner: qrAttendanceService,
-      devices: deviceService,
       userLimiter: createRateLimiter({
         windowMs: 60_000,
         limit: env.USER_RATE_LIMIT_PER_MIN,
         keyGenerator: perUser,
       }),
       scanLimiter: createRateLimiter({ windowMs: 60_000, limit: 120, keyGenerator: perUser }),
+    }),
+  );
+
+  app.use(
+    '/api/attendance-qr',
+    dailyQrRouter({
+      auth,
+      dailyQr: dailyQrService,
+      userLimiter: createRateLimiter({
+        windowMs: 60_000,
+        limit: env.USER_RATE_LIMIT_PER_MIN,
+        keyGenerator: perUser,
+      }),
       verifyLimiter: createRateLimiter({ windowMs: 60_000, limit: 30, keyGenerator: perUser }),
+      generateLimiter: createRateLimiter({ windowMs: 60_000, limit: 10, keyGenerator: perUser }),
     }),
   );
 

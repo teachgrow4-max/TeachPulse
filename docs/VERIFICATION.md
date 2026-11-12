@@ -119,7 +119,7 @@ The full catalogue is `VERIFICATION_REASONS` in `packages/shared/src/verificatio
 - A reading is rejected if it is missing or malformed, flagged as **mocked**, **stale** (older than
   `max_fix_age_seconds`, default 30), from a device clock more than 10 s in the **future**, or
   **imprecise** (reported accuracy worse than `max_gps_accuracy_m`, default 50).
-- Only a trustworthy reading is judged against the radius (default 100 m). Telling someone "you
+- Only a trustworthy reading is judged against the radius (default 150 m). Telling someone "you
   are 450 m away" from a reading that is itself unreliable would mislead them, so they are first
   asked for a better one.
 - All limits are inclusive: exactly at the limit passes.
@@ -244,13 +244,18 @@ one challenge. Only the newest challenge for a device is live.
 | `check_in_layers_web` | GPS, NETWORK, QR, DEVICE |
 | `check_in_layers_mobile` | GPS, NETWORK, QR, DEVICE |
 | `check_out_layers` | GPS, NETWORK |
-| `admin_scan_layers` | GPS, NETWORK |
+| `admin_scan_layers` | GPS, NETWORK (**retired**: the scanner is no longer location-checked) |
+| `daily_qr_layers` | GPS, NETWORK (what an employee must prove before generating an attendance QR) |
+| `daily_qr_ttl_seconds` | 90 |
+| `daily_qr_max_per_day` | 5 |
 | `verification_ttl_seconds` | 120 |
 | `max_devices_per_employee` | 2 |
 
-`admin_scan_layers` is what a person operating the QR attendance scanner must prove about **themselves** before they may record somebody else's attendance (purpose `ADMIN_SCAN`, see [ADMIN_QR_ATTENDANCE.md](ADMIN_QR_ATTENDANCE.md)). It uses the same engine, evidence and rules as a check-in, and is requested only by the scanner endpoints: the employee-facing endpoints reject it. The lobby QR is left out by default because it is single-use per person per rotation.
+**Retired:** `admin_scan_layers` was what a person operating the QR attendance scanner had to prove about **themselves** (purpose `ADMIN_SCAN`). An administrator or operator is no longer asked for a location or a network, and nothing reads this setting any more (see [ADMIN_QR_ATTENDANCE.md](ADMIN_QR_ATTENDANCE.md)).
 
-GPS and NETWORK cannot be removed from check-in or from the scanner check (database constraints). The `channel` in a
+`daily_qr_layers` is requested by `POST /api/attendance-qr/verify` (the employee about to generate a QR code); the verification is stored with the purpose of the action the code is for (CHECK_IN / CHECK_OUT) and is spent when the code is generated.
+
+GPS and NETWORK cannot be removed from check-in, check-out, or the QR check (database constraints). The `channel` in a
 request is declared by the client and is not authenticated, so anyone who can use both the app and
 a browser can pick whichever channel's policy is lighter: **the weaker of the two policies is the
 one that effectively binds everybody.** The defaults are identical for that reason; loosen one

@@ -149,7 +149,7 @@ sequenceDiagram
 
 | Layer | Rule | Notes |
 |---|---|---|
-| **GPS** | Haversine distance ≤ `geofence_radius_m` (default 100). Reject if `accuracy > max_accuracy_m`. Reject if the fix is older than `max_fix_age_s` or in the future relative to server time. | Radius and thresholds are admin-configurable. Distance is stored for every attempt. A reading the device flags as `mocked` is rejected, but the flag is cooperative: its absence proves nothing, which is why GPS is only one of four layers. |
+| **GPS** | Haversine distance ≤ `geofence_radius_m` (default 150). Reject if `accuracy > max_accuracy_m`. Reject if the fix is older than `max_fix_age_s` or in the future relative to server time. | Radius and thresholds are admin-configurable. Distance is stored for every attempt. A reading the device flags as `mocked` is rejected, but the flag is cooperative: its absence proves nothing, which is why GPS is only one of four layers. |
 | **Office network** | `req.ip` must match an active `office_networks` CIDR. | Express `trust proxy` is set to an explicit hop count or CIDR list from env. `X-Forwarded-For` is never read directly. Tests prove forged forwarding headers are ignored. |
 | **QR** | A 256-bit code derived per rotation window with HMAC-SHA256 from `QR_SIGNING_SECRET`, so no plaintext is stored; only its **SHA-256** is kept, once somebody scans it. Window = rotation interval (30 s default), accepted 5 s early and 10 s late. Consumption is one `ACCEPTED` scan per employee, enforced by a unique index. | See decision D1 below and [VERIFICATION.md](VERIFICATION.md). |
 | **Device** | Device must be registered, approved, not revoked, and must sign a fresh single-use challenge with its own key. | See §6.3. |

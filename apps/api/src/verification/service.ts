@@ -53,6 +53,11 @@ export interface VerifyInput {
    */
   identity: Identity;
   request: VerificationRequest;
+  /**
+   * Which set of layers applies. 'daily_qr' is the proof an employee makes before generating an
+   * attendance QR code (policy.dailyQrLayers); the default is the ordinary check-in / check-out policy.
+   */
+  mode?: 'standard' | 'daily_qr';
   /** The caller's address as Express resolved it (`req.ip`), already normalised. */
   ip: string | null;
   meta: RequestMeta;
@@ -68,15 +73,18 @@ export function requiredLayers(
   policy: PolicyRow,
   purpose: VerificationRequest['purpose'],
   channel: VerificationRequest['channel'],
+  mode: 'standard' | 'daily_qr' = 'standard',
 ): Set<VerificationLayer> {
   const configured =
-    purpose === 'ADMIN_SCAN'
-      ? policy.adminScanLayers
-      : purpose === 'CHECK_OUT'
-        ? policy.checkOutLayers
-        : channel === 'WEB'
-          ? policy.checkInLayersWeb
-          : policy.checkInLayersMobile;
+    mode === 'daily_qr'
+      ? policy.dailyQrLayers
+      : purpose === 'ADMIN_SCAN'
+        ? policy.adminScanLayers
+        : purpose === 'CHECK_OUT'
+          ? policy.checkOutLayers
+          : channel === 'WEB'
+            ? policy.checkInLayersWeb
+            : policy.checkInLayersMobile;
   return new Set<VerificationLayer>([...configured, ...ALWAYS_REQUIRED]);
 }
 
@@ -123,7 +131,7 @@ export class VerificationService {
   ): Promise<VerifyOutcome> {
     const { qr, webauthn } = this.deps;
     const { identity, request, ip, meta } = input;
-    const required = requiredLayers(policy, request.purpose, request.channel);
+    const required = requiredLayers(policy, request.purpose, request.channel, input.mode);
 
     // ---- the four layers ---------------------------------------------------------------------
     let gps: GpsEvaluation | null = null;

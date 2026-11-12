@@ -139,7 +139,7 @@ describe('schema contract', () => {
     });
   });
 
-  it('defaults a new office to Asia/Kolkata, Monday-Saturday, 100 m', async () => {
+  it('defaults a new office to Asia/Kolkata, Monday-Saturday, 150 m', async () => {
     await seedOffice(ctx.db);
     const [office] = await ctx.db.query<Record<string, unknown>>(
       `select timezone, working_days::text as working_days, geofence_radius_m, qr_rotation_seconds
@@ -148,7 +148,7 @@ describe('schema contract', () => {
     expect(office).toMatchObject({
       timezone: 'Asia/Kolkata',
       working_days: '{1,2,3,4,5,6}',
-      geofence_radius_m: 100,
+      geofence_radius_m: 150,
       qr_rotation_seconds: 30,
     });
   });

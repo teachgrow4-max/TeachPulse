@@ -1,7 +1,6 @@
-import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { expect } from 'vitest';
-import type { ConfirmScanResponse, ScanResolution, VerificationLayer } from '@teachgrow/shared';
+import type { DailyQrIssued } from '@teachgrow/shared';
 import {
   type Account,
   type ApiHarness,
@@ -89,14 +88,6 @@ export class QrScene {
     await this.h.testDb.query('delete from public.office_networks');
   }
 
-  /** What the person at the scanner must prove about themselves (GPS and NETWORK always stay). */
-  async setAdminScanLayers(layers: VerificationLayer[]): Promise<void> {
-    await this.h.testDb.query(
-      `update public.attendance_policies set admin_scan_layers = $1::text[]::public.verification_layer[]`,
-      [layers],
-    );
-  }
-
   /** A good location fix: at the office, precise, five seconds old. */
   gps = (over: Body = {}) => ({
     latitude: OFFICE.latitude,
@@ -127,39 +118,28 @@ export class QrScene {
     scanner: Body = { kind: 'WEB', label: 'Front desk' },
   ) => this.post('/api/qr-attendance/scan', { payload, scanner }, token);
 
-  verifyScan = (scanId: string, body?: Body, token = this.tok.operator) =>
+  /** The employee proves GPS + office network for an action (200 with a verification, or 422). */
+  verify = (who: 'employee' | 'colleague' | 'admin' | 'operator' = 'employee', gps = this.gps()) =>
+    this.post('/api/attendance-qr/verify', { gps }, this.tok[who]);
+
+  generate = (who: 'employee' | 'colleague' | 'admin' = 'employee', verificationId?: string) =>
     this.post(
-      `/api/qr-attendance/scans/${scanId}/verify`,
-      body ?? { channel: 'WEB', gps: this.gps() },
-      token,
+      '/api/attendance-qr/generate',
+      verificationId ? { verificationId } : {},
+      this.tok[who],
     );
 
-  confirm = (
-    scanId: string,
-    action: string,
-    key: string = randomUUID(),
-    token = this.tok.operator,
-  ) =>
-    request(this.h.app)
-      .post(`/api/qr-attendance/scans/${scanId}/confirm`)
-      .set(bearer(token))
-      .set('Idempotency-Key', key)
-      .send({ action });
-
-  /** Scan, prove presence, confirm: the whole thing, asserting that each step worked. */
-  async record(
-    payload: string,
-    action: 'CHECK_IN' | 'CHECK_OUT',
-    token = this.tok.operator,
-  ): Promise<{ scan: ScanResolution; confirmation: ConfirmScanResponse }> {
-    const scan = await this.scan(payload, token);
-    expect(scan.status).toBe(200);
-    expect(scan.body.action).toBe(action);
-    const verified = await this.verifyScan(scan.body.scanId as string, undefined, token);
-    expect(verified.status).toBe(200);
-    const done = await this.confirm(scan.body.scanId as string, action, undefined, token);
-    expect(done.status).toBe(200);
-    return { scan: scan.body as ScanResolution, confirmation: done.body as ConfirmScanResponse };
+  /** Verify at the office and generate: the whole employee side, asserting that each step worked. */
+  async code(who: 'employee' | 'colleague' | 'admin' = 'employee'): Promise<DailyQrIssued> {
+    let verificationId: string | undefined;
+    if (who !== 'admin') {
+      const verified = await this.verify(who);
+      expect(verified.status, JSON.stringify(verified.body)).toBe(200);
+      verificationId = verified.body.verificationId as string;
+    }
+    const made = await this.generate(who, verificationId);
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    return made.body as DailyQrIssued;
   }
 
   // ---- database peeks ---------------------------------------------------------------------

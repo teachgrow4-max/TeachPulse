@@ -92,6 +92,12 @@ export interface PolicyRow {
   adminScanLayers: VerificationLayer[];
   verificationTtlSeconds: number;
   maxDevicesPerEmployee: number;
+  /** What an employee must prove before generating an attendance QR code (GPS and NETWORK always). */
+  dailyQrLayers: VerificationLayer[];
+  /** How long a generated attendance QR code can be scanned. */
+  dailyQrTtlSeconds: number;
+  /** How many attendance QR codes one person may generate per day. */
+  dailyQrMaxPerDay: number;
 }
 
 /** The policy in force on the office-local calendar date of `at`. */
@@ -104,6 +110,9 @@ export async function loadPolicyAt(q: Queryable, at: Date, timezone: string): Pr
     admin_scan: VerificationLayer[];
     ttl: number;
     max_devices: number;
+    qr_layers: VerificationLayer[];
+    qr_ttl: number;
+    qr_max: number;
   }>(
     `select id,
             check_in_layers_web::text[]    as web,
@@ -111,7 +120,10 @@ export async function loadPolicyAt(q: Queryable, at: Date, timezone: string): Pr
             check_out_layers::text[]       as checkout,
             admin_scan_layers::text[]      as admin_scan,
             verification_ttl_seconds       as ttl,
-            max_devices_per_employee       as max_devices
+            max_devices_per_employee       as max_devices,
+            daily_qr_layers::text[]        as qr_layers,
+            daily_qr_ttl_seconds           as qr_ttl,
+            daily_qr_max_per_day           as qr_max
      from public.attendance_policies
      where effective_from <= (($1::timestamptz) at time zone $2)::date
      order by effective_from desc
@@ -128,6 +140,9 @@ export async function loadPolicyAt(q: Queryable, at: Date, timezone: string): Pr
     adminScanLayers: row.admin_scan,
     verificationTtlSeconds: row.ttl,
     maxDevicesPerEmployee: row.max_devices,
+    dailyQrLayers: row.qr_layers,
+    dailyQrTtlSeconds: row.qr_ttl,
+    dailyQrMaxPerDay: row.qr_max,
   };
 }
 

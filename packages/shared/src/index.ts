@@ -7,3 +7,4 @@ export * from './verification.js';
 export * from './office.js';
 export * from './devices.js';
 export * from './employee-qr.js';
+export * from './daily-qr.js';

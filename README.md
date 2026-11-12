@@ -4,7 +4,7 @@ Employees mark attendance only after the server verifies they are physically at 
 
 **Status:** Phase 5 of 12 complete (database, RLS, attendance engine, authentication, roles and employee administration, and the four-layer office-verification engine). The check-in/out and break endpoints, the user interfaces and everything after them are not built yet. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
 
-**Also in the repository:** administrator-operated QR attendance (every employee's personal QR code, a camera scanner for administrators and attendance operators, QR management) and the first slice of the web app that goes with it. See [docs/ADMIN_QR_ATTENDANCE.md](docs/ADMIN_QR_ATTENDANCE.md).
+**Also in the repository:** QR attendance (an employee generates a short-lived QR code once the server has checked their location and office network; an administrator or attendance operator scans it, from anywhere, and the attendance is recorded) with an attendance dashboard, and the first slice of the web app that goes with it. See [docs/ADMIN_QR_ATTENDANCE.md](docs/ADMIN_QR_ATTENDANCE.md).
 
 ## Layout
 
@@ -71,7 +71,7 @@ The API needs a Postgres/Supabase project it can reach. The web app is a static 
 - [Architecture](docs/ARCHITECTURE.md) — design decisions and security model
 - [Authentication guide](docs/AUTH.md) — sessions, roles, CSRF, lockout, client contracts, limits
 - [Office verification](docs/VERIFICATION.md) — GPS, office network, rotating QR and device layers; what each does and does not prove
-- [Admin-operated QR attendance](docs/ADMIN_QR_ATTENDANCE.md) — personal QR codes, the operator scanner, how it reuses the attendance engine, threat model, what was and was not verified
+- [Admin-operated QR attendance](docs/ADMIN_QR_ATTENDANCE.md) — employee-generated QR codes, the admin scanner, the attendance dashboard, how it reuses the attendance engine, threat model, what was and was not verified
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md) — phases, open decisions, external prerequisites
 - [Database reference](docs/DATABASE.md) — migrations, functions, conventions, how to test
 - Phase reports: [Phase 3](docs/phase-reports/PHASE-3.md), [Phase 4](docs/phase-reports/PHASE-4.md), [Phase 5](docs/phase-reports/PHASE-5.md), [Admin QR attendance](docs/phase-reports/ADMIN-QR-ATTENDANCE.md)

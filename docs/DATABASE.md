@@ -17,6 +17,7 @@ Source of truth: `supabase/migrations/*.sql`, applied in filename order. The beh
 | `20261105000900_office_verification.sql`      | QR scan outcome `VALID`; `attendance_policies.max_devices_per_employee`; unique live WebAuthn credential; **`device_challenges`** (single-use, API-only); retention now also purges spent challenges |
 | `20261106000100_admin_scan_purpose.sql`        | enum value `ADMIN_SCAN` (alone, because a new enum value cannot be used in the transaction that adds it) |
 | `20261106000200_employee_qr_attendance.sql`   | role `attendance_operator`; event source `ADMIN_QR`; `attendance_policies.admin_scan_layers`; **`employee_qr_codes`** and **`qr_scan_logs`** (RLS, column-level grants, guard triggers); the engine core `record_check_in` / `record_check_out` extracted from `check_in` / `check_out`; `assert_scanner`, `qr_attendance_state`, `admin_qr_record`. See [ADMIN_QR_ATTENDANCE.md](ADMIN_QR_ATTENDANCE.md) |
+| `20261107000100_daily_qr_attendance.sql`      | **`attendance_qr_tokens`** (the employee-generated, short-lived attendance QR; only a hash is stored); `attendance_policies.daily_qr_layers / daily_qr_ttl_seconds / daily_qr_max_per_day`; the default geofence is 150 m; `qr_scan_logs.daily_qr_id`; `issue_daily_qr`, `daily_qr_record`. Replaces the ID-card scanner flow, no enum value is added. See [ADMIN_QR_ATTENDANCE.md](ADMIN_QR_ATTENDANCE.md) |
 
 ## Conventions
 

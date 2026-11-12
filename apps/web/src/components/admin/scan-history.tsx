@@ -45,15 +45,6 @@ function queryString(filters: Filters, page: number): string {
   return params.toString();
 }
 
-function VerificationBadge({ result }: { result: ScanLogDto['officeVerification'] }) {
-  if (!result) return <span className="text-muted">—</span>;
-  return result === 'VERIFIED' ? (
-    <Badge tone="success">Verified</Badge>
-  ) : (
-    <Badge tone="danger">Rejected</Badge>
-  );
-}
-
 /** Everything that was scanned: who, what became of it, and which operator was holding the camera. */
 export function ScanHistory() {
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
@@ -149,7 +140,9 @@ export function ScanHistory() {
                 onChange={(e) => change({ status: e.target.value })}
               >
                 <option value="">All outcomes</option>
-                {SCAN_DISPLAY_STATUSES.map((status) => (
+                {SCAN_DISPLAY_STATUSES.filter(
+                  (status) => status !== 'PENDING' && status !== 'EXPIRED',
+                ).map((status) => (
                   <option key={status} value={status}>
                     {STATUS_LABEL[status]}
                   </option>
@@ -205,9 +198,6 @@ export function ScanHistory() {
                       Recorded by
                     </th>
                     <th scope="col" className="px-4 py-3 font-semibold">
-                      Office check
-                    </th>
-                    <th scope="col" className="px-4 py-3 font-semibold">
                       Device
                     </th>
                   </tr>
@@ -240,9 +230,6 @@ export function ScanHistory() {
                         </p>
                       </td>
                       <td className="px-4 py-3">
-                        <VerificationBadge result={scan.officeVerification} />
-                      </td>
-                      <td className="px-4 py-3">
                         <p>{scan.scanner.label ?? '—'}</p>
                         {scan.clientIp ? (
                           <p className="font-mono text-xs text-muted">{scan.clientIp}</p>
@@ -269,10 +256,6 @@ export function ScanHistory() {
                   <p className="text-xs text-muted">
                     Recorded by {scan.scannedBy.fullName} · {scan.scanner.label ?? 'unknown device'}
                   </p>
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="text-muted">Office check</span>
-                    <VerificationBadge result={scan.officeVerification} />
-                  </div>
                 </li>
               ))}
             </ul>

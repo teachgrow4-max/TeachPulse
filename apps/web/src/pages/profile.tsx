@@ -1,13 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
-import type { EmployeeQrDto } from '@teachgrow/shared';
-import { api, messageOf } from '../lib/api';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { formatWorkDate } from '../lib/format';
-import { EmployeeQrView } from '../components/qr/employee-qr-view';
 import { Badge } from '../components/ui/badge';
-import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Avatar, Notice, Skeleton } from '../components/ui/misc';
+import { QrIcon } from '../components/ui/icons';
+import { Avatar } from '../components/ui/misc';
 
 const ROLE_LABEL = {
   employee: 'Employee',
@@ -25,13 +22,9 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-/** The signed-in person's profile, with their personal QR code and the ID-card downloads. */
+/** The signed-in person's profile. */
 export function ProfilePage() {
   const { user } = useAuth();
-  const qr = useQuery({
-    queryKey: ['employee-qr', 'me'],
-    queryFn: () => api<EmployeeQrDto>('/api/employee-qr/me'),
-  });
   if (!user) return null;
 
   return (
@@ -58,36 +51,25 @@ export function ProfilePage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>My QR code</CardTitle>
-          <CardDescription>
-            Your personal ID code. An attendance operator scans it to record your attendance.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="pt-3">
-          {qr.isLoading ? (
-            <div className="flex flex-col items-center gap-3">
-              <Skeleton className="aspect-square w-full max-w-[19rem] rounded-2xl" />
-              <Skeleton className="h-5 w-40" />
-            </div>
-          ) : qr.isError ? (
-            <Notice tone="danger" title="Your QR code could not be loaded">
-              <p>{messageOf(qr.error)}</p>
-              <Button
-                className="mt-3"
-                variant="outline"
-                size="sm"
-                onClick={() => void qr.refetch()}
-              >
-                Try again
-              </Button>
-            </Notice>
-          ) : qr.data ? (
-            <EmployeeQrView qr={qr.data} own />
-          ) : null}
-        </CardContent>
-      </Card>
+      {user.role === 'employee' || user.attendanceRequired ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Attendance</CardTitle>
+            <CardDescription>
+              Your attendance is recorded by an administrator scanning a QR code that you generate
+              each time, on this device, once you are at the office.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-3">
+            <Link
+              to="/attendance-qr"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-brand-fg hover:opacity-90"
+            >
+              <QrIcon className="h-5 w-5" /> Open Attendance QR
+            </Link>
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

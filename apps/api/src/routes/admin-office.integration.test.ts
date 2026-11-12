@@ -94,7 +94,7 @@ describe('office settings', () => {
       address: '1 Example Street',
       latitude: 10,
       longitude: 20,
-      geofenceRadiusM: 100,
+      geofenceRadiusM: 150,
       maxGpsAccuracyM: 50,
       maxFixAgeSeconds: 30,
       qrRotationSeconds: 30,
@@ -108,7 +108,7 @@ describe('office settings', () => {
     expect(entry!.after_data).toMatchObject({
       name: 'Test Office',
       latitude: 10,
-      geofenceRadiusM: 100,
+      geofenceRadiusM: 150,
     });
   });
 
@@ -138,13 +138,13 @@ describe('office settings', () => {
       maxGpsAccuracyM: 50,
     });
     const [entry] = await auditRows(h, 'office.update');
-    expect(entry!.before_data).toEqual({ geofenceRadiusM: 100, qrRotationSeconds: 30 });
+    expect(entry!.before_data).toEqual({ geofenceRadiusM: 150, qrRotationSeconds: 30 });
     expect(entry!.after_data).toEqual({ geofenceRadiusM: 250, qrRotationSeconds: 45 });
   });
 
   it('writes no audit entry when nothing actually changed', async () => {
     await configure();
-    await put('/api/admin/office/settings', { geofenceRadiusM: 100 });
+    await put('/api/admin/office/settings', { geofenceRadiusM: 150 });
     expect(await auditRows(h, 'office.update')).toHaveLength(0);
   });
 
@@ -454,7 +454,7 @@ describe('POST /api/admin/office/test', () => {
       const res = await post('/api/admin/office/test', { gps: inside() });
       expect(res.body.gps).toMatchObject({
         result: 'PASS',
-        radiusM: 100,
+        radiusM: 150,
         maxAccuracyM: 50,
         reasons: [],
       });

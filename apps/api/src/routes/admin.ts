@@ -2,10 +2,12 @@ import { Router, type RequestHandler } from 'express';
 import {
   createDepartmentSchema,
   createEmployeeSchema,
+  dailyAttendanceQuerySchema,
   listEmployeesQuerySchema,
   updateEmployeeSchema,
   uuidSchema,
 } from '@teachgrow/shared';
+import type { DailyAttendanceReportService } from '../attendance/daily-report.js';
 import type { DeviceService } from '../devices/service.js';
 import type { EmployeeQrService } from '../employee-qr/service.js';
 import type { EmployeeService } from '../employees/service.js';
@@ -25,6 +27,7 @@ export interface AdminRouterDeps {
   devices: DeviceService;
   employeeQr: EmployeeQrService;
   qrAttendance: QrAttendanceService;
+  dailyReport: DailyAttendanceReportService;
   userLimiter: RequestHandler;
 }
 
@@ -33,7 +36,7 @@ export interface AdminRouterDeps {
  * active account, no pending forced password change) and `requireRole('admin')`.
  */
 export function adminRouter(deps: AdminRouterDeps): Router {
-  const { auth, employees, office, devices, employeeQr, qrAttendance } = deps;
+  const { auth, employees, office, devices, employeeQr, qrAttendance, dailyReport } = deps;
   const router = Router();
 
   router.use(auth.authenticate(), auth.requireRole('admin'), deps.userLimiter);
@@ -41,6 +44,12 @@ export function adminRouter(deps: AdminRouterDeps): Router {
   router.use('/office', adminOfficeRouter({ office }));
   router.use('/devices', adminDevicesRouter({ devices }));
   router.use(adminEmployeeQrRouter({ qr: employeeQr, scanner: qrAttendance }));
+
+  // GET /api/admin/attendance/daily?date=YYYY-MM-DD   who is in, late and absent on a day
+  router.get('/attendance/daily', async (req, res) => {
+    const query = dailyAttendanceQuerySchema.parse(req.query);
+    res.json(await dailyReport.forDate(query.date));
+  });
 
   // ---- departments ---------------------------------------------------------------------
   router.get('/departments', async (_req, res) => {
