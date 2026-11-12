@@ -123,6 +123,7 @@ const show = async (text = CODE) => {
 
 beforeEach(() => {
   session.set('test-token');
+  localStorage.setItem('teachgrow.scanner.autoRecord', 'off'); // most tests exercise the manual confirmation
   camera.enabled.length = 0;
 });
 afterEach(() => {
@@ -183,6 +184,22 @@ describe('the scanner page', () => {
     expect(confirm?.headers.get('idempotency-key')).toMatch(/\S{8,}/);
     // order: scan, then verify, then confirm
     expect(called('POST /api/qr-attendance/scan')).toHaveLength(1);
+  });
+
+  it('records straight after the scan when automatic recording is on, once only', async () => {
+    localStorage.removeItem('teachgrow.scanner.autoRecord'); // the default is on
+    allowLocation();
+    const { called } = mockFetch({
+      ...recentRoute,
+      'POST /api/qr-attendance/scan': json(200, resolution()),
+      [`POST /api/qr-attendance/scans/${SCAN_ID}/verify`]: json(200, verified),
+      [`POST /api/qr-attendance/scans/${SCAN_ID}/confirm`]: json(200, confirmation()),
+    });
+    renderApp(<ScannerPage />);
+    await show();
+    await screen.findByText('Checked in');
+    expect(called(`POST /api/qr-attendance/scans/${SCAN_ID}/confirm`)).toHaveLength(1);
+    expect(called(`POST /api/qr-attendance/scans/${SCAN_ID}/verify`)).toHaveLength(1);
   });
 
   it('goes back to the camera for the next employee', async () => {

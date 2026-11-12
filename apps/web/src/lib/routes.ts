@@ -17,6 +17,7 @@ export function homeFor(role: RoleName): string {
 const ACCESS: Array<{ path: string; roles: readonly RoleName[] }> = [
   { path: '/scanner', roles: ['admin', 'attendance_operator'] },
   { path: '/admin/qr', roles: ['admin'] },
+  { path: '/admin/employees', roles: ['admin'] },
   { path: '/profile', roles: ['employee', 'admin', 'attendance_operator'] },
   { path: '/change-password', roles: ['employee', 'admin', 'attendance_operator'] },
 ];

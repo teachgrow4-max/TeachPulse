@@ -5,7 +5,7 @@ import { useAuth } from '../../lib/auth';
 import { cn } from '../../lib/utils';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
-import { LogOutIcon, QrIcon, ScanIcon, SpinnerIcon, UserIcon } from '../ui/icons';
+import { LogOutIcon, QrIcon, ScanIcon, SpinnerIcon, UserIcon, UserPlusIcon } from '../ui/icons';
 
 const ROLE_LABEL: Record<RoleName, string> = {
   employee: 'Employee',
@@ -29,6 +29,7 @@ const NAV: NavItem[] = [
     roles: ['admin', 'attendance_operator'],
   },
   { to: '/admin/qr', label: 'QR management', icon: QrIcon, roles: ['admin'] },
+  { to: '/admin/employees/new', label: 'Add employee', icon: UserPlusIcon, roles: ['admin'] },
   {
     to: '/profile',
     label: 'My profile',

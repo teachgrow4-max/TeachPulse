@@ -93,12 +93,37 @@ function useSecondsLeft(iso: string | null): number {
   return iso ? Math.max(0, Math.ceil((new Date(iso).getTime() - now) / 1000)) : 0;
 }
 
+const AUTO_KEY = 'teachgrow.scanner.autoRecord';
+
+/** Automatic recording is on unless the operator turned it off on this device. */
+function useAutoRecord(): [boolean, (value: boolean) => void] {
+  const [value, setValue] = useState(() => {
+    try {
+      return localStorage.getItem(AUTO_KEY) !== 'off';
+    } catch {
+      return true;
+    }
+  });
+  const update = (next: boolean) => {
+    setValue(next);
+    try {
+      localStorage.setItem(AUTO_KEY, next ? 'on' : 'off');
+    } catch {
+      /* the choice just is not remembered */
+    }
+  };
+  return [value, update];
+}
+
 export function ScannerPage() {
   const queryClient = useQueryClient();
   const [phase, setPhase] = useState<Phase>({ name: 'scanning' });
   const [step, setStep] = useState<SubmitStep>('idle');
   const [failure, setFailure] = useState<SubmitFailure | null>(null);
   const busy = useRef(false);
+  const [autoRecord, setAutoRecord] = useAutoRecord();
+  /** The scan that has already had its automatic attempt, so a failure is shown instead of retried in a loop. */
+  const autoTried = useRef<string | null>(null);
   /** The lobby code, once scanned, when the policy asks the operator to prove they are in the building. */
   const officeCode = useRef<string | null>(null);
   /**
@@ -297,6 +322,17 @@ export function ScannerPage() {
     }
   }
 
+  // Record straight after a scan when the operator has not asked to confirm by hand. A scan that needs
+  // the lobby code, or that fails, stops here and shows the usual button.
+  useEffect(() => {
+    if (!autoRecord || phase.name !== 'resolved' || autoTried.current === phase.scan.scanId) return;
+    const { scan } = phase;
+    if (scan.action !== 'CHECK_IN' && scan.action !== 'CHECK_OUT') return;
+    if (scan.requiredLayers.includes('QR') || scan.requiredLayers.includes('DEVICE')) return;
+    autoTried.current = scan.scanId;
+    void confirmWith(null);
+  }, [autoRecord, phase]);
+
   function onConfirm() {
     if (phase.name !== 'resolved') return;
     const needsOfficeCode = phase.scan.requiredLayers.includes('QR') && !officeCode.current;
@@ -324,8 +360,18 @@ export function ScannerPage() {
       <div className="min-w-0">
         <h1 className="mb-1 text-2xl font-bold">QR attendance</h1>
         <p className="mb-4 text-sm text-muted">
-          Scan an employee’s QR code, check who it is, then confirm to record their attendance.
+          {autoRecord
+            ? 'Scan an employee’s QR code and their attendance is recorded straight away.'
+            : 'Scan an employee’s QR code, check who it is, then confirm to record their attendance.'}
         </p>
+        <label className="mb-4 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={autoRecord}
+            onChange={(e) => setAutoRecord(e.target.checked)}
+          />
+          Record automatically after scanning
+        </label>
 
         {phase.name === 'scanning' || phase.name === 'resolving' || phase.name === 'officeCode' ? (
           <div className="relative">

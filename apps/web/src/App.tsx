@@ -14,6 +14,9 @@ import { ProfilePage } from './pages/profile';
 const QrManagementPage = lazy(() =>
   import('./pages/qr-management').then((m) => ({ default: m.QrManagementPage })),
 );
+const AddEmployeePage = lazy(() =>
+  import('./pages/add-employee').then((m) => ({ default: m.AddEmployeePage })),
+);
 const ScannerPage = lazy(() => import('./pages/scanner').then((m) => ({ default: m.ScannerPage })));
 
 function FullScreenMessage({ title, children }: { title: string; children?: React.ReactNode }) {
@@ -82,6 +85,7 @@ export function App() {
           </Route>
           <Route element={<RequireRole roles={['admin']} />}>
             <Route path="/admin/qr" element={<QrManagementPage />} />
+            <Route path="/admin/employees/new" element={<AddEmployeePage />} />
           </Route>
           <Route
             path="/unsupported"
