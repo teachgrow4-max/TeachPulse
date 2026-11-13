@@ -34,5 +34,10 @@
     "supabase": "^2.0.0",
     "typescript": "^5.6.0",
     "typescript-eslint": "^8.0.0"
+  },
+  "overrides": {
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.1"
+    }
   }
 }

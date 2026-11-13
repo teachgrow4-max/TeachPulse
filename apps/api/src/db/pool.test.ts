@@ -20,7 +20,10 @@ const pool = {
 
 vi.mock('pg', () => ({
   default: {
-    Pool: vi.fn(() => pool),
+    // Called with `new`: vitest 4 refuses to construct a mock whose implementation is an arrow function.
+    Pool: vi.fn(function () {
+      return pool;
+    }),
     types: { setTypeParser: vi.fn(), builtins: { DATE: 1082, INT8: 20 } },
   },
 }));
