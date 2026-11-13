@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AuthUserDto, SessionResponse } from '@teachgrow/shared';
-import { api, refreshSession, session } from './api';
+import { ApiError, api, refreshSession, session } from './api';
 
 type Status = 'loading' | 'signedOut' | 'signedIn';
 
@@ -80,14 +80,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signedOut();
   }, [signedOut]);
 
-  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
-    await api('/api/auth/change-password', {
-      method: 'POST',
-      body: { currentPassword, newPassword },
-    });
-    const me = await api<{ user: AuthUserDto }>('/api/auth/me');
-    setUser(me.user);
-  }, []);
+  const changePassword = useCallback(
+    async (currentPassword: string, newPassword: string) => {
+      const email = user?.email;
+      await api('/api/auth/change-password', {
+        method: 'POST',
+        body: { currentPassword, newPassword },
+      });
+      try {
+        const me = await api<{ user: AuthUserDto }>('/api/auth/me');
+        setUser(me.user);
+      } catch (error) {
+        // Changing a password ends every sign-in of the account at the provider, this one too. The
+        // new password was only just typed and proven, so sign in again with it, rather than send
+        // the person to a sign-in page that would ask for what they just entered.
+        if (!(error instanceof ApiError) || error.status !== 401 || !email) throw error;
+        await login(email, newPassword);
+      }
+    },
+    [user, login],
+  );
 
   const value = useMemo<AuthValue>(
     () => ({ status, user, login, logout, changePassword }),

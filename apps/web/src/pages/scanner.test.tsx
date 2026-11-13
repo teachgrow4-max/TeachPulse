@@ -181,6 +181,22 @@ describe('the scanner page', () => {
     expect(screen.queryByText('Checked in')).toBeNull();
   });
 
+  it('opens the camera again by itself a few seconds after a recorded scan', async () => {
+    mockFetch({
+      'GET /api/qr-attendance/recent': json(200, { items: [] }),
+      'POST /api/qr-attendance/scan': json(200, recorded()),
+    });
+    renderApp(<ScannerPage />);
+    await show();
+    await screen.findByText('Checked in');
+    // the tick stays while somebody reads it ...
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    expect(screen.getByText('Checked in')).toBeInTheDocument();
+    // ... then the camera is back for the next person, with nobody pressing anything
+    await waitFor(() => expect(screen.queryByText('Checked in')).toBeNull(), { timeout: 4500 });
+    expect(camera.enabled.at(-1)).toBe(true);
+  }, 10_000);
+
   it('records a code once even if the camera reads it twice in a row', async () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => (release = resolve));

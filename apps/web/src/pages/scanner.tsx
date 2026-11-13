@@ -1,9 +1,10 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ScanLogDto, ScanRecorded } from '@teachgrow/shared';
 import { ApiError, api, messageOf } from '../lib/api';
 import { buzz, describeDevice, isTouchDevice } from '../lib/device';
 import { formatTime } from '../lib/format';
+import { chime, soundLocked, unlockSound } from '../lib/sound';
 import { CameraView } from '../components/scanner/camera-view';
 import { RecentScans, RejectionPanel, SuccessPanel } from '../components/scanner/scan-panels';
 import { decodePhoto, useCameraScanner } from '../components/scanner/use-camera-scanner';
@@ -31,6 +32,9 @@ type Phase =
   | { name: 'rejected'; error: ApiError }
   | { name: 'done'; result: ScanRecorded };
 
+/** How long the confirmation stays before the camera opens again. */
+const AUTO_NEXT_MS = 3000;
+
 const RECENT_KEY = ['qr-attendance', 'recent'] as const;
 
 const STEPS: Array<{ icon: AppIcon; title: string; text: string }> = [
@@ -54,6 +58,18 @@ const STEPS: Array<{ icon: AppIcon; title: string; text: string }> = [
 export function ScannerPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
+
+  // Sound only works once the browser has seen a touch: unlock it on the first one, wherever it lands.
+  const [muted, setMuted] = useState(() => soundLocked());
+  useEffect(() => {
+    const unlock = () => {
+      unlockSound();
+      setMuted(soundLocked());
+    };
+    const events = ['pointerdown', 'keydown', 'touchstart'] as const;
+    events.forEach((name) => window.addEventListener(name, unlock, { passive: true }));
+    return () => events.forEach((name) => window.removeEventListener(name, unlock));
+  }, []);
   const [phase, setPhase] = useState<Phase>({ name: 'scanning' });
   const busy = useRef(false);
   /** The last code that was sent, so a lost connection can send it again without a new scan. */
@@ -93,6 +109,7 @@ export function ScannerPage() {
           },
         });
         buzz([30, 40, 90]);
+        chime();
         toast.show({
           tone: 'success',
           title: `${result.employee.fullName} ${result.action === 'CHECK_IN' ? 'checked in' : 'checked out'}`,
@@ -148,6 +165,14 @@ export function ScannerPage() {
   );
 
   const scanAnother = () => setPhase({ name: 'scanning' });
+
+  // After a recorded scan the tick stays for a moment, then the camera opens for the next person.
+  const recorded = phase.name === 'done';
+  useEffect(() => {
+    if (!recorded) return;
+    const id = setTimeout(() => setPhase({ name: 'scanning' }), AUTO_NEXT_MS);
+    return () => clearTimeout(id);
+  }, [recorded]);
   const retry = () => {
     if (lastCode.current) void record(lastCode.current);
   };
@@ -168,6 +193,20 @@ export function ScannerPage() {
               onPhoto={(file) => void onPhoto(file)}
               caption="Hold the QR code inside the frame. The employee generates it in their TeachGrow app."
             />
+          ) : null}
+
+          {muted && (phase.name === 'scanning' || phase.name === 'recording') ? (
+            <button
+              type="button"
+              onClick={() => {
+                unlockSound();
+                chime();
+                setMuted(soundLocked());
+              }}
+              className="mx-auto mt-3 flex items-center gap-2 rounded-full bg-warning-soft px-4 py-2 text-sm font-medium text-warning"
+            >
+              Sound is off. Tap here once to turn the success sound on.
+            </button>
           ) : null}
 
           {phase.name === 'rejected' ? (

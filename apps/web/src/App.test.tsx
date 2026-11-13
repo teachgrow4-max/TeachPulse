@@ -233,6 +233,56 @@ describe('signing in', () => {
     });
     expect(await screen.findByRole('heading', { name: 'Attendance QR' })).toBeInTheDocument();
   });
+
+  it('signs a person straight back in when changing the password ended their session', async () => {
+    // The sign-in provider ends every session of an account when its password changes: this one too.
+    const user = userEvent.setup();
+    let refreshes = 0;
+    const { called } = signedInAs(person({ mustChangePassword: true }), {
+      'POST /api/auth/refresh': () => {
+        refreshes += 1;
+        return refreshes === 1
+          ? json(200, sessionBody(person({ mustChangePassword: true })))
+          : json(401, { error: { code: 'UNAUTHENTICATED', message: '' } });
+      },
+      'POST /api/auth/change-password': json(204),
+      'GET /api/auth/me': json(401, { error: { code: 'UNAUTHENTICATED', message: '' } }),
+      'POST /api/auth/login': (request) => {
+        expect(request.body).toEqual({
+          email: 'priya@demo.test',
+          password: 'Brand-New-Passw0rd',
+          client: 'web',
+        });
+        return json(200, sessionBody(person()));
+      },
+    });
+    renderApp(<App />, { auth: true, route: '/profile' });
+    expect(await screen.findByText('Choose a new password')).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Current password'), 'Temp-Passw0rd-1');
+    await user.type(screen.getByLabelText('New password'), 'Brand-New-Passw0rd');
+    await user.type(screen.getByLabelText('New password again'), 'Brand-New-Passw0rd');
+    await user.click(screen.getByRole('button', { name: 'Save new password' }));
+
+    // straight to their own page: not the sign-in page, and not the password page again
+    expect(await screen.findByRole('heading', { name: 'Attendance QR' })).toBeInTheDocument();
+    expect(screen.queryByText('Choose a new password')).toBeNull();
+    expect(called('POST /api/auth/login')).toHaveLength(1);
+  });
+
+  it('does not send somebody back to choosing a password after they sign in again', async () => {
+    const user = userEvent.setup();
+    signedInAs(employee, {
+      'POST /api/auth/refresh': json(401, { error: { code: 'UNAUTHENTICATED', message: '' } }),
+      'POST /api/auth/login': json(200, sessionBody(employee)),
+    });
+    // the sign-in page remembers the page the session ended on: here, choosing a password
+    renderApp(<App />, { auth: true, route: '/change-password' });
+    await user.type(await screen.findByLabelText('Email'), 'priya@demo.test');
+    await user.type(screen.getByLabelText('Password'), 'Brand-New-Passw0rd');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByRole('heading', { name: 'Attendance QR' })).toBeInTheDocument();
+    expect(screen.queryByText('Choose a new password')).toBeNull();
+  });
 });
 
 describe('who sees what', () => {

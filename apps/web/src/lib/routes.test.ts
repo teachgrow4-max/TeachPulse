@@ -30,6 +30,12 @@ describe('where somebody lands after signing in', () => {
     expect(landingFor('office_display', '/profile')).toBe('/unsupported');
   });
 
+  it('never goes back to choosing a new password: changing it ends the sign-in', () => {
+    expect(landingFor('employee', '/change-password')).toBe('/attendance-qr');
+    expect(landingFor('admin', '/change-password?from=x')).toBe('/admin/attendance');
+    expect(landingFor('attendance_operator', '/change-password')).toBe('/scanner');
+  });
+
   it.each([
     'https://evil.example/profile',
     '//evil.example/profile',

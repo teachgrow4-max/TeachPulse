@@ -35,6 +35,10 @@ const ACCESS: Array<{ path: string; roles: readonly RoleName[] }> = [
 export function landingFor(role: RoleName, from?: string | null): string {
   if (from && from.startsWith('/') && !from.startsWith('//')) {
     const path = from.split(/[?#]/)[0] ?? '';
+    // Never "go back" to choosing a new password. Changing a password ends the sign-in, so the
+    // sign-in page can be reached from that very page; by the time somebody signs in again they
+    // have chosen one, and if they still must, the app sends them there by itself.
+    if (path === '/change-password') return homeFor(role);
     const rule = ACCESS.find((entry) => path === entry.path || path.startsWith(`${entry.path}/`));
     if (rule?.roles.includes(role)) return from;
   }
