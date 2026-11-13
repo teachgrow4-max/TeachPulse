@@ -15,11 +15,17 @@ describe('where somebody lands after signing in', () => {
     );
     expect(landingFor('attendance_operator', '/scanner')).toBe('/scanner');
     expect(landingFor('employee', '/profile')).toBe('/profile');
+    expect(landingFor('admin', '/admin/qr')).toBe('/admin/qr');
+    expect(landingFor('admin', '/admin/scan-history?employee=x')).toBe(
+      '/admin/scan-history?employee=x',
+    );
   });
 
   it('does not send the next person to a page that was meant for the last one', () => {
     expect(landingFor('employee', '/scanner')).toBe('/attendance-qr');
     expect(landingFor('employee', '/admin/attendance')).toBe('/attendance-qr');
+    expect(landingFor('employee', '/admin/qr')).toBe('/attendance-qr');
+    expect(landingFor('attendance_operator', '/admin/scan-history')).toBe('/scanner');
     expect(landingFor('attendance_operator', '/admin/attendance')).toBe('/scanner');
     expect(landingFor('office_display', '/profile')).toBe('/unsupported');
   });

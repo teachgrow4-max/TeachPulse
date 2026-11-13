@@ -1,11 +1,12 @@
 import { useId, useRef, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import type { AdminEmployeeQrRow, Paginated } from '@teachgrow/shared';
+import type { EmployeeDto, Paginated } from '@teachgrow/shared';
 import { api } from '../../lib/api';
 import { useDebounced } from '../../lib/hooks';
 import { cn } from '../../lib/utils';
 import { Input } from '../ui/form';
 import { SearchIcon, XIcon } from '../ui/icons';
+import { Avatar } from '../ui/misc';
 
 export interface PickedEmployee {
   id: string;
@@ -35,19 +36,16 @@ export function EmployeePicker({
   const results = useQuery({
     queryKey: ['employee-picker', search],
     queryFn: () =>
-      api<Paginated<AdminEmployeeQrRow>>(
-        `/api/admin/employee-qr?pageSize=8&search=${encodeURIComponent(search)}`,
+      api<Paginated<EmployeeDto>>(
+        `/api/admin/employees?pageSize=8&search=${encodeURIComponent(search)}`,
       ),
     enabled: open && search.length > 0,
     placeholderData: keepPreviousData,
   });
   const items = search ? (results.data?.items ?? []) : [];
 
-  function choose(row: AdminEmployeeQrRow) {
-    onChange({
-      id: row.employee.id,
-      label: `${row.employee.fullName} (${row.employee.employeeCode})`,
-    });
+  function choose(person: EmployeeDto) {
+    onChange({ id: person.id, label: `${person.fullName} (${person.employeeCode})` });
     setText('');
     setOpen(false);
   }
@@ -56,11 +54,11 @@ export function EmployeePicker({
     return (
       <div className="flex flex-col gap-1.5">
         <span className="text-sm font-medium">{label}</span>
-        <div className="flex h-11 items-center justify-between gap-2 rounded-xl border border-line bg-surface px-3.5 text-sm">
+        <div className="flex h-11 items-center justify-between gap-2 rounded-xl border border-line-strong bg-surface px-3.5 text-sm shadow-card sm:h-10">
           <span className="truncate font-medium">{value.label}</span>
           <button
             type="button"
-            className="rounded p-1 text-muted hover:text-fg"
+            className="rounded-lg p-1 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
             aria-label={`Clear ${label.toLowerCase()} filter`}
             onClick={() => {
               onChange(null);
@@ -80,7 +78,7 @@ export function EmployeePicker({
         {label}
       </label>
       <div className="relative">
-        <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+        <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
         <Input
           id={id}
           ref={input}
@@ -91,7 +89,7 @@ export function EmployeePicker({
           aria-activedescendant={items[active] ? `${id}-opt-${active}` : undefined}
           autoComplete="off"
           placeholder="Name, ID or email"
-          className="pl-9"
+          className="pl-10"
           value={text}
           onChange={(event) => {
             setText(event.target.value);
@@ -121,31 +119,34 @@ export function EmployeePicker({
           id={`${id}-list`}
           role="listbox"
           aria-label={`${label} matches`}
-          className="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-auto rounded-xl border border-line bg-surface p-1 shadow-card"
+          className="absolute left-0 right-0 top-full z-20 mt-1.5 max-h-72 overflow-auto rounded-2xl border border-line bg-surface p-1.5 shadow-pop"
         >
           {items.length === 0 ? (
-            <li className="px-3 py-2 text-sm text-muted" role="presentation">
+            <li className="px-3 py-2.5 text-sm text-muted" role="presentation">
               {results.isFetching ? 'Searching…' : 'No one matches that.'}
             </li>
           ) : (
-            items.map((row, index) => (
+            items.map((person, index) => (
               <li
-                key={row.employee.id}
+                key={person.id}
                 id={`${id}-opt-${index}`}
                 role="option"
                 aria-selected={index === active}
                 className={cn(
-                  'cursor-pointer rounded-lg px-3 py-2 text-sm',
+                  'flex cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm',
                   index === active ? 'bg-brand-soft' : 'hover:bg-surface-2',
                 )}
                 onMouseDown={(event) => {
                   event.preventDefault();
-                  choose(row);
+                  choose(person);
                 }}
                 onMouseEnter={() => setActive(index)}
               >
-                <span className="font-medium">{row.employee.fullName}</span>{' '}
-                <span className="font-mono text-xs text-muted">{row.employee.employeeCode}</span>
+                <Avatar name={person.fullName} src={person.avatarUrl} size="xs" />
+                <span className="min-w-0 truncate font-medium">{person.fullName}</span>
+                <span className="ml-auto shrink-0 font-mono text-xs text-muted">
+                  {person.employeeCode}
+                </span>
               </li>
             ))
           )}

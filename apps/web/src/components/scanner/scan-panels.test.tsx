@@ -44,6 +44,12 @@ describe('SuccessPanel', () => {
     expect(within(card).getByText('Recorded by QR scan')).toBeInTheDocument();
     expect(within(card).getByText('Attendance date')).toBeInTheDocument();
     expect(within(card).getByText('Check-in time')).toBeInTheDocument();
+    expect(within(card).getByText('Maths Teacher')).toBeInTheDocument();
+    expect(within(card).getByText('Valid, now used')).toBeInTheDocument();
+    // the confirmation says so, and gives the exact time
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('Attendance recorded successfully');
+    expect(status).toHaveTextContent(/\d{2}:\d{2}:\d{2}/);
     await user.click(screen.getByRole('button', { name: /Scan another employee/ }));
     expect(next).toHaveBeenCalled();
   });
@@ -100,14 +106,41 @@ describe('RejectionPanel', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('QR code not recognised');
   });
 
-  it('describes a lost connection in its own words', () => {
+  it('describes a lost connection in its own words, and offers to send the same code again', async () => {
+    const user = userEvent.setup();
+    const retry = vi.fn();
     render(
       <RejectionPanel
         error={new ApiError(0, 'NETWORK_ERROR', 'Could not reach the server.')}
         onNext={vi.fn()}
+        onRetry={retry}
       />,
     );
     expect(screen.getByRole('alert')).toHaveTextContent('Cannot reach the server');
+    await user.click(screen.getByRole('button', { name: /Try again/ }));
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers no retry when the server did answer: the code itself was the problem', () => {
+    render(
+      <RejectionPanel
+        error={new ApiError(422, 'QR_EXPIRED', 'This QR code has expired.')}
+        onNext={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /Try again/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Scan another employee/ })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['EMPLOYEE_INACTIVE', 'Employee account is inactive'],
+    ['QR_SUPERSEDED', 'A newer QR code exists'],
+    ['ALREADY_CHECKED_OUT', 'Already checked out'],
+    ['SELF_SCAN_FORBIDDEN', 'You cannot scan your own code'],
+  ])('names the problem for %s', (code, title) => {
+    render(<RejectionPanel error={new ApiError(422, code, 'Because.')} onNext={vi.fn()} />);
+    expect(screen.getByRole('alert')).toHaveTextContent(title);
   });
 });
 
@@ -166,6 +199,31 @@ describe('RecentScans', () => {
     expect(screen.getByText('Code not recognised')).toBeInTheDocument();
     expect(screen.getByText('Unknown code')).toBeInTheDocument();
     expect(screen.getAllByText(/5 min ago/).length).toBeGreaterThan(0);
+    // who was scanned: initials when there is no photo, and the employee ID
+    expect(screen.getAllByText('PS').length).toBe(3);
+    expect(screen.getAllByText('E-1001').length).toBe(3);
+  });
+
+  it('shows a person’s photo when they have one', () => {
+    render(
+      <RecentScans
+        loading={false}
+        items={[
+          row({
+            employee: {
+              id: 'e',
+              employeeCode: 'E-1001',
+              fullName: 'Priya Sharma',
+              avatarUrl: 'https://example.test/priya.jpg',
+            },
+          }),
+        ]}
+      />,
+    );
+    expect(screen.getByRole('img', { name: 'Photo of Priya Sharma' })).toHaveAttribute(
+      'src',
+      'https://example.test/priya.jpg',
+    );
   });
 
   it('shows an empty state and a loading state', () => {

@@ -4,6 +4,7 @@ import { PASSWORD_MIN_LENGTH, passwordSchema } from '@teachgrow/shared';
 import { ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { homeFor } from '../lib/routes';
+import { AuthLayout } from '../components/layout/auth-layout';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Field, Input } from '../components/ui/form';
@@ -46,69 +47,68 @@ export function ChangePasswordPage() {
   }
 
   return (
-    <main className="flex min-h-dvh items-center justify-center px-4 py-10">
-      <div className="w-full max-w-sm">
-        <h1 className="mb-1 text-2xl font-bold">Choose a new password</h1>
-        <p className="mb-5 text-sm text-muted">
-          {user?.mustChangePassword
-            ? 'You signed in with a temporary password. Choose your own to continue.'
-            : 'Choose a new password for your account.'}
-        </p>
-        <Card className="p-5">
-          <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-4" noValidate>
-            {error ? <Notice tone="danger">{error}</Notice> : null}
-            <Field label="Current password">
-              {(props) => (
-                <Input
-                  {...props}
-                  type="password"
-                  autoComplete="current-password"
-                  value={current}
-                  onChange={(event) => setCurrent(event.target.value)}
-                />
-              )}
-            </Field>
-            <Field
-              label="New password"
-              hint={`At least ${PASSWORD_MIN_LENGTH} characters, with a lowercase letter, a capital and a digit.`}
-              error={newProblem}
-            >
-              {(props) => (
-                <Input
-                  {...props}
-                  type="password"
-                  autoComplete="new-password"
-                  value={next}
-                  onChange={(event) => setNext(event.target.value)}
-                />
-              )}
-            </Field>
-            <Field label="New password again" error={mismatch}>
-              {(props) => (
-                <Input
-                  {...props}
-                  type="password"
-                  autoComplete="new-password"
-                  value={again}
-                  onChange={(event) => setAgain(event.target.value)}
-                />
-              )}
-            </Field>
-            <Button type="submit" size="lg" loading={busy} disabled={!canSubmit}>
-              Save new password
-            </Button>
-          </form>
-        </Card>
-        <div className="mt-4 text-center">
-          <button
-            type="button"
-            className="text-sm text-muted underline underline-offset-4"
-            onClick={() => void logout()}
+    <AuthLayout
+      title="Choose a new password"
+      subtitle={
+        user?.mustChangePassword
+          ? 'You signed in with a temporary password. Choose your own to continue.'
+          : 'Choose a new password for your account.'
+      }
+      footer={
+        <button
+          type="button"
+          className="text-sm text-muted underline underline-offset-4 hover:text-fg"
+          onClick={() => void logout()}
+        >
+          Sign out instead
+        </button>
+      }
+    >
+      <Card className="p-5 sm:p-6">
+        <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-4" noValidate>
+          {error ? <Notice tone="danger">{error}</Notice> : null}
+          <Field label="Current password">
+            {(props) => (
+              <Input
+                {...props}
+                type="password"
+                autoComplete="current-password"
+                value={current}
+                onChange={(event) => setCurrent(event.target.value)}
+              />
+            )}
+          </Field>
+          <Field
+            label="New password"
+            hint={`At least ${PASSWORD_MIN_LENGTH} characters, with a lowercase letter, a capital and a digit.`}
+            error={newProblem}
           >
-            Sign out instead
-          </button>
-        </div>
-      </div>
-    </main>
+            {(props) => (
+              <Input
+                {...props}
+                type="password"
+                autoComplete="new-password"
+                value={next}
+                onChange={(event) => setNext(event.target.value)}
+              />
+            )}
+          </Field>
+          <Field label="New password again" error={mismatch}>
+            {(props) => (
+              <Input
+                {...props}
+                type="password"
+                autoComplete="new-password"
+                value={again}
+                onChange={(event) => setAgain(event.target.value)}
+              />
+            )}
+          </Field>
+          <Button type="submit" size="lg" loading={busy} disabled={!canSubmit}>
+            Save new password
+          </Button>
+        </form>
+      </Card>
+    </AuthLayout>
   );
 }

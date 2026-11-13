@@ -588,6 +588,139 @@ describe('the administrator’s attendance dashboard', () => {
 });
 
 // =============================================================================================
+describe('QR management: where each employee’s code stands', () => {
+  type Row = {
+    fullName: string;
+    state: string;
+    generated: number;
+    lastScannedAt: string | null;
+    latest: { action: string; usedAt: string | null } | null;
+  };
+  const overview = (query = '', token = s.tok.admin) =>
+    s.get(`/api/admin/qr/overview${query}`, token);
+  const rowsOf = (body: { rows: Row[] }) =>
+    Object.fromEntries(body.rows.map((row) => [row.fullName, row])) as Record<string, Row>;
+
+  it('starts with nobody having a code, and follows a code from live to scanned', async () => {
+    const start = await overview();
+    expect(start.status).toBe(200);
+    expect(start.body).toMatchObject({
+      date: '2026-11-02',
+      isToday: true,
+      summary: { total: 2, active: 0, used: 0, expired: 0, none: 2 },
+      maxPerDay: 5,
+      ttlSeconds: 90,
+      total: 2,
+    });
+    expect(rowsOf(start.body)[s.employee.fullName]).toMatchObject({
+      state: 'NONE',
+      generated: 0,
+      latest: null,
+      lastScannedAt: null,
+    });
+
+    const issued = await s.code('employee');
+    const live = await overview();
+    expect(live.body.summary).toMatchObject({ active: 1, none: 1 });
+    expect(rowsOf(live.body)[s.employee.fullName]).toMatchObject({
+      state: 'ACTIVE',
+      generated: 1,
+      latest: { action: 'CHECK_IN', usedAt: null },
+      lastScannedAt: null,
+    });
+
+    expect((await s.scan(issued.payload, s.tok.admin)).status).toBe(200);
+    const scanned = await overview();
+    expect(scanned.body.summary).toMatchObject({ active: 0, used: 1, none: 1 });
+    const row = rowsOf(scanned.body)[s.employee.fullName]!;
+    expect(row.state).toBe('USED');
+    expect(new Date(row.lastScannedAt!).getTime()).toBe(T0);
+    expect(new Date(row.latest!.usedAt!).getTime()).toBe(T0);
+  });
+
+  it('calls a code that ran out unscanned expired, and counts every code made that day', async () => {
+    await s.code('colleague');
+    // A new code replaces the first. (The test clock is frozen, so both carry the same time.)
+    await s.code('colleague');
+    expect(rowsOf((await overview()).body)[s.colleague.fullName]).toMatchObject({
+      state: 'ACTIVE',
+      generated: 2,
+    });
+
+    await moveTo(T0 + 3 * MIN);
+    const later = await overview();
+    expect(rowsOf(later.body)[s.colleague.fullName]).toMatchObject({
+      state: 'EXPIRED',
+      generated: 2,
+    });
+    expect(later.body.summary).toMatchObject({ active: 0, expired: 1, none: 1 });
+  });
+
+  it('searches, filters by state and department, and pages, without changing the summary', async () => {
+    await s.code('employee');
+    const dept = await s.post('/api/admin/departments', { name: 'Maths' }, s.tok.admin);
+    await h.testDb.query('update public.profiles set department_id = $1 where id = $2', [
+      dept.body.department.id,
+      s.colleague.id,
+    ]);
+
+    const names = async (query: string) =>
+      ((await overview(query)).body.rows as Row[]).map((row) => row.fullName);
+    expect(await names(`?search=${encodeURIComponent(s.employee.fullName)}`)).toEqual([
+      s.employee.fullName,
+    ]);
+    // a part of a name matches everybody who has it
+    expect(await names('?search=person')).toHaveLength(2);
+    expect(await names(`?search=${s.colleague.code}`)).toEqual([s.colleague.fullName]);
+    expect(await names(`?search=${encodeURIComponent(s.colleague.email)}`)).toEqual([
+      s.colleague.fullName,
+    ]);
+    // `%` is text, not a wildcard
+    expect(await names('?search=%25')).toEqual([]);
+    expect(await names('?state=ACTIVE')).toEqual([s.employee.fullName]);
+    expect(await names('?state=NONE')).toEqual([s.colleague.fullName]);
+    expect(await names(`?departmentId=${dept.body.department.id}`)).toEqual([s.colleague.fullName]);
+
+    const filtered = await overview('?state=ACTIVE');
+    expect(filtered.body.total).toBe(1);
+    expect(filtered.body.summary).toMatchObject({ total: 2, active: 1, none: 1 }); // unchanged
+
+    const first = await overview('?pageSize=1&page=1');
+    const second = await overview('?pageSize=1&page=2');
+    expect(first.body.total).toBe(2);
+    expect(first.body.rows).toHaveLength(1);
+    expect(second.body.rows).toHaveLength(1);
+    expect(first.body.rows[0].employeeId).not.toBe(second.body.rows[0].employeeId);
+  });
+
+  it('shows another day, and refuses the future, bad dates and unknown filters', async () => {
+    await s.code('employee');
+    const sunday = await overview('?date=2026-11-01');
+    expect(sunday.status).toBe(200);
+    expect(sunday.body.isToday).toBe(false);
+    expect(sunday.body.summary).toMatchObject({ total: 2, active: 0, none: 2 });
+    for (const bad of ['?date=2026-11-03', '?date=soon', '?state=LOST', '?pageSize=500', '?x=1']) {
+      expect((await overview(bad)).status, bad).toBe(400);
+    }
+  });
+
+  it('is for administrators only', async () => {
+    for (const who of ['employee', 'operator', 'display'] as const) {
+      expect((await overview('', s.tok[who])).status, who).toBe(403);
+    }
+    expect((await request(h.app).get('/api/admin/qr/overview')).status).toBe(401);
+  });
+
+  it('never shows a code or its hash', async () => {
+    const issued = await s.code('employee');
+    const body = JSON.stringify((await overview()).body);
+    expect(body).not.toContain(issued.payload);
+    expect(body).not.toContain('TGD1');
+    expect(body).not.toMatch(/token_hash|tokenHash|payload/);
+  });
+});
+
+// =============================================================================================
 describe('scan history', () => {
   it('lists recorded and refused scans, newest first, and filters them', async () => {
     const issued = await s.code();

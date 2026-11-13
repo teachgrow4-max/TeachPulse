@@ -8,14 +8,16 @@ import {
 } from '@teachgrow/shared';
 import { api, messageOf } from '../../lib/api';
 import { formatDateTime } from '../../lib/format';
+import { useMediaQuery } from '../../lib/hooks';
 import { outcomeText, STATUS_LABEL, statusTone } from '../../lib/scan-labels';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Field, Input, Select } from '../ui/form';
-import { HistoryIcon } from '../ui/icons';
-import { EmptyState, Notice, Skeleton } from '../ui/misc';
+import { HistoryIcon, SearchOffIcon } from '../ui/icons';
+import { EmptyState, Notice, PersonCell, Skeleton } from '../ui/misc';
 import { Pager } from '../ui/pager';
+import { Table, TableScroll, Tbody, Td, Th, Thead, Tr } from '../ui/table';
 import { EmployeePicker, type PickedEmployee } from './employee-picker';
 
 const PAGE_SIZE = 25;
@@ -46,9 +48,15 @@ function queryString(filters: Filters, page: number): string {
 }
 
 /** Everything that was scanned: who, what became of it, and which operator was holding the camera. */
-export function ScanHistory() {
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+export function ScanHistory({
+  initialEmployee = null,
+}: {
+  initialEmployee?: PickedEmployee | null;
+}) {
+  const [filters, setFilters] = useState<Filters>({ ...NO_FILTERS, employee: initialEmployee });
   const [page, setPage] = useState(1);
+  // The table needs about 800 px; below that, each scan is a card.
+  const wide = useMediaQuery('(min-width: 1100px)', true);
   const change = (patch: Partial<Filters>) => {
     setFilters((current) => ({ ...current, ...patch }));
     setPage(1);
@@ -88,13 +96,14 @@ export function ScanHistory() {
     filters.from || filters.to || filters.employee || filters.scannedBy || filters.status;
 
   return (
-    <div className="flex flex-col gap-4">
-      <Card className="p-4">
+    <div className="flex flex-col gap-5">
+      <Card className="p-4 sm:p-5">
         <form
-          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
           onSubmit={(event) => event.preventDefault()}
           aria-label="Filter the scan history"
         >
+          <EmployeePicker value={filters.employee} onChange={(employee) => change({ employee })} />
           <Field label="From" error={rangeError}>
             {(props) => (
               <Input
@@ -115,7 +124,6 @@ export function ScanHistory() {
               />
             )}
           </Field>
-          <EmployeePicker value={filters.employee} onChange={(employee) => change({ employee })} />
           <Field label="Recorded by">
             {(props) => (
               <Select
@@ -167,99 +175,110 @@ export function ScanHistory() {
 
       {history.isError ? (
         <Notice tone="danger" title="The history could not be loaded">
-          {messageOf(history.error)}
+          <p>{messageOf(history.error)}</p>
+          <Button
+            className="mt-3"
+            variant="outline"
+            size="sm"
+            loading={history.isFetching}
+            onClick={() => void history.refetch()}
+          >
+            Try again
+          </Button>
         </Notice>
       ) : null}
 
-      <Card>
+      {/* when the first load failed there is nothing to show: the message above says so */}
+      <Card hidden={history.isError && !history.data}>
         {history.isLoading ? (
-          <div className="space-y-3 p-4">
+          <div className="space-y-4 p-5">
             {[0, 1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-12 w-full" />
+              <div key={i} className="flex items-center gap-3">
+                <Skeleton className="h-9 w-9 rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-3.5 w-44" />
+                  <Skeleton className="h-3 w-28" />
+                </div>
+                <Skeleton className="h-6 w-20 rounded-full" />
+              </div>
             ))}
           </div>
         ) : history.data && history.data.items.length > 0 ? (
           <>
-            <div className="hidden overflow-x-auto md:block">
-              <table className="w-full text-left text-sm">
-                <caption className="sr-only">QR scan history</caption>
-                <thead className="border-b border-line text-xs uppercase tracking-wide text-muted">
-                  <tr>
-                    <th scope="col" className="px-4 py-3 font-semibold">
-                      When
-                    </th>
-                    <th scope="col" className="px-4 py-3 font-semibold">
-                      Employee
-                    </th>
-                    <th scope="col" className="px-4 py-3 font-semibold">
-                      Outcome
-                    </th>
-                    <th scope="col" className="px-4 py-3 font-semibold">
-                      Recorded by
-                    </th>
-                    <th scope="col" className="px-4 py-3 font-semibold">
-                      Device
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {history.data.items.map((scan) => (
-                    <tr key={scan.id}>
-                      <td className="whitespace-nowrap px-4 py-3">
-                        {formatDateTime(scan.scannedAt)}
-                      </td>
-                      <td className="px-4 py-3">
-                        {scan.employee ? (
-                          <>
-                            <p className="font-medium">{scan.employee.fullName}</p>
-                            <p className="font-mono text-xs text-muted">
-                              {scan.employee.employeeCode}
-                            </p>
-                          </>
-                        ) : (
-                          <span className="text-muted">Unknown code</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge tone={statusTone(scan.status)}>{outcomeText(scan)}</Badge>
-                      </td>
-                      <td className="px-4 py-3">
-                        <p className="font-medium">{scan.scannedBy.fullName}</p>
-                        <p className="text-xs text-muted">
-                          {ROLE_LABEL[scan.scannedBy.role] ?? scan.scannedBy.role}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <p>{scan.scanner.label ?? '—'}</p>
-                        {scan.clientIp ? (
-                          <p className="font-mono text-xs text-muted">{scan.clientIp}</p>
-                        ) : null}
-                      </td>
+            {wide ? (
+              <TableScroll>
+                <Table>
+                  <caption className="sr-only">QR scan history</caption>
+                  <Thead>
+                    <tr>
+                      <Th>When</Th>
+                      <Th>Employee</Th>
+                      <Th>Outcome</Th>
+                      <Th>Recorded by</Th>
+                      <Th>Device</Th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <ul className="divide-y divide-line md:hidden">
-              {history.data.items.map((scan) => (
-                <li key={scan.id} className="flex flex-col gap-1.5 px-4 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-semibold">
-                        {scan.employee ? scan.employee.fullName : 'Unknown code'}
-                      </p>
-                      <p className="text-xs text-muted">{formatDateTime(scan.scannedAt)}</p>
+                  </Thead>
+                  <Tbody>
+                    {history.data.items.map((scan) => (
+                      <Tr key={scan.id}>
+                        <Td className="whitespace-nowrap tabular-nums">
+                          {formatDateTime(scan.scannedAt)}
+                        </Td>
+                        <Td>
+                          {scan.employee ? (
+                            <PersonCell
+                              name={scan.employee.fullName}
+                              subtitle={
+                                <span className="font-mono">{scan.employee.employeeCode}</span>
+                              }
+                              src={scan.employee.avatarUrl}
+                            />
+                          ) : (
+                            <span className="text-muted">Unknown code</span>
+                          )}
+                        </Td>
+                        <Td>
+                          <Badge tone={statusTone(scan.status)}>{outcomeText(scan)}</Badge>
+                        </Td>
+                        <Td>
+                          <PersonCell
+                            name={scan.scannedBy.fullName}
+                            subtitle={ROLE_LABEL[scan.scannedBy.role] ?? scan.scannedBy.role}
+                            src={scan.scannedBy.avatarUrl}
+                          />
+                        </Td>
+                        <Td>
+                          <p>{scan.scanner.label ?? '—'}</p>
+                          {scan.clientIp ? (
+                            <p className="font-mono text-xs text-muted">{scan.clientIp}</p>
+                          ) : null}
+                        </Td>
+                      </Tr>
+                    ))}
+                  </Tbody>
+                </Table>
+              </TableScroll>
+            ) : (
+              <ul className="divide-y divide-line">
+                {history.data.items.map((scan) => (
+                  <li key={scan.id} className="flex flex-col gap-2.5 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <PersonCell
+                        name={scan.employee ? scan.employee.fullName : 'Unknown code'}
+                        subtitle={formatDateTime(scan.scannedAt)}
+                        src={scan.employee?.avatarUrl}
+                      />
+                      <Badge tone={statusTone(scan.status)}>{outcomeText(scan)}</Badge>
                     </div>
-                    <Badge tone={statusTone(scan.status)}>{outcomeText(scan)}</Badge>
-                  </div>
-                  <p className="text-xs text-muted">
-                    Recorded by {scan.scannedBy.fullName} · {scan.scanner.label ?? 'unknown device'}
-                  </p>
-                </li>
-              ))}
-            </ul>
-            <div className="border-t border-line px-3 pb-3">
+                    <p className="text-xs text-muted">
+                      Recorded by {scan.scannedBy.fullName} ·{' '}
+                      {scan.scanner.label ?? 'unknown device'}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="border-t border-line px-4 pb-4 sm:px-5">
               <Pager
                 page={page}
                 pageSize={PAGE_SIZE}
@@ -272,7 +291,9 @@ export function ScanHistory() {
         ) : (
           <EmptyState
             title={filtered ? 'No scans match these filters' : 'No scans yet'}
-            icon={<HistoryIcon className="h-8 w-8" />}
+            icon={
+              filtered ? <SearchOffIcon className="h-7 w-7" /> : <HistoryIcon className="h-7 w-7" />
+            }
           >
             {filtered
               ? 'Try widening the dates or clearing a filter.'

@@ -93,6 +93,8 @@ export interface ScanLogPerson {
   id: string;
   employeeCode: string;
   fullName: string;
+  /** The person's photo, when they have one; the web app shows their initials otherwise. */
+  avatarUrl?: string | null;
 }
 
 /** One row of scan history. */

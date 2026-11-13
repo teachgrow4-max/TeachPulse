@@ -5,7 +5,7 @@ import { useAuth } from './lib/auth';
 import { homeFor } from './lib/routes';
 import { AppShell } from './components/layout/app-shell';
 import { Button } from './components/ui/button';
-import { SpinnerIcon } from './components/ui/icons';
+import { InfoIcon, SpinnerIcon } from './components/ui/icons';
 import { ChangePasswordPage } from './pages/change-password';
 import { LoginPage } from './pages/login';
 import { ProfilePage } from './pages/profile';
@@ -20,12 +20,21 @@ const AttendanceQrPage = lazy(() =>
 const AddEmployeePage = lazy(() =>
   import('./pages/add-employee').then((m) => ({ default: m.AddEmployeePage })),
 );
+const QrManagementPage = lazy(() =>
+  import('./pages/qr-management').then((m) => ({ default: m.QrManagementPage })),
+);
+const ScanHistoryPage = lazy(() =>
+  import('./pages/scan-history').then((m) => ({ default: m.ScanHistoryPage })),
+);
 const ScannerPage = lazy(() => import('./pages/scanner').then((m) => ({ default: m.ScannerPage })));
 
 function FullScreenMessage({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
     <div className="mx-auto flex min-h-[60dvh] max-w-md flex-col items-center justify-center gap-3 px-6 text-center">
-      <h1 className="text-2xl font-bold">{title}</h1>
+      <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-2 text-muted ring-1 ring-inset ring-line">
+        <InfoIcon className="h-7 w-7" />
+      </span>
+      <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
       {children ? <div className="text-sm text-muted">{children}</div> : null}
     </div>
   );
@@ -91,6 +100,8 @@ export function App() {
           </Route>
           <Route element={<RequireRole roles={['admin']} />}>
             <Route path="/admin/attendance" element={<AttendancePage />} />
+            <Route path="/admin/qr" element={<QrManagementPage />} />
+            <Route path="/admin/scan-history" element={<ScanHistoryPage />} />
             <Route path="/admin/employees/new" element={<AddEmployeePage />} />
           </Route>
           <Route

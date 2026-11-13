@@ -408,7 +408,9 @@ const LOG_COLUMNS = `
   case when l.status = 'PENDING' and l.expires_at <= $1::timestamptz then 'EXPIRED'
        else l.status end as display_status,
   l.employee_id, e.employee_code as employee_code, e.full_name as employee_name,
+  e.avatar_url as employee_avatar,
   l.scanned_by, s.employee_code as scanner_code, s.full_name as scanner_name, sr.name as scanner_role,
+  s.avatar_url as scanner_avatar,
   l.confirmed_at, l.confirmed_action, l.office_verification_result, l.attendance_event_id::text as event_id,
   l.scanner, host(l.client_ip) as client_ip`;
 
@@ -428,10 +430,12 @@ interface LogRow {
   employee_id: string | null;
   employee_code: string | null;
   employee_name: string | null;
+  employee_avatar: string | null;
   scanned_by: string;
   scanner_code: string;
   scanner_name: string;
   scanner_role: RoleName;
+  scanner_avatar: string | null;
   confirmed_at: Date | string | null;
   confirmed_action: 'CHECK_IN' | 'CHECK_OUT' | null;
   office_verification_result: 'VERIFIED' | 'REJECTED' | null;
@@ -453,12 +457,14 @@ function toLogDto(row: LogRow, includeAddress: boolean): ScanLogDto {
           id: row.employee_id,
           employeeCode: row.employee_code ?? '',
           fullName: row.employee_name ?? '',
+          avatarUrl: row.employee_avatar,
         }
       : null,
     scannedBy: {
       id: row.scanned_by,
       employeeCode: row.scanner_code,
       fullName: row.scanner_name,
+      avatarUrl: row.scanner_avatar,
       role: row.scanner_role,
     },
     confirmedAt: isoOrNull(row.confirmed_at),

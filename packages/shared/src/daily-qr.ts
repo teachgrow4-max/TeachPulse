@@ -172,3 +172,70 @@ export interface DailyAttendanceReport {
   warnings: { duplicateScans: number; invalidOrExpiredScans: number };
   rows: DailyAttendanceRow[];
 }
+
+// ---------------------------------------------------------------------------------------------
+// QR management: where each employee's code stands on a day
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Where an employee's latest code of the day stands:
+ *   ACTIVE   a code is live right now and can be scanned
+ *   USED     the latest code was scanned and attendance recorded
+ *   EXPIRED  codes were made but none is live and the latest was never scanned
+ *   NONE     no code was made that day
+ */
+export const QR_OVERVIEW_STATES = ['ACTIVE', 'USED', 'EXPIRED', 'NONE'] as const;
+export type QrOverviewState = (typeof QR_OVERVIEW_STATES)[number];
+
+export const qrOverviewQuerySchema = z.strictObject({
+  /** Office-timezone calendar date; today when omitted. */
+  date: isoDateSchema.optional(),
+  /** Matches name, employee ID or email. */
+  search: z
+    .string()
+    .trim()
+    .max(100)
+    .optional()
+    .transform((value) => (value ? value : undefined)),
+  departmentId: uuidSchema.optional(),
+  state: z.enum(QR_OVERVIEW_STATES).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+export type QrOverviewQuery = z.output<typeof qrOverviewQuerySchema>;
+
+export interface QrOverviewRow {
+  employeeId: string;
+  employeeCode: string;
+  fullName: string;
+  email: string;
+  avatarUrl: string | null;
+  department: string | null;
+  designation: string | null;
+  state: QrOverviewState;
+  /** How many codes the employee made on the day. */
+  generated: number;
+  /** The latest code of the day; null when none was made. The code itself is never kept or shown. */
+  latest: {
+    action: ScanAction;
+    issuedAt: string;
+    expiresAt: string;
+    usedAt: string | null;
+  } | null;
+  /** The last time attendance was recorded from this employee's code (any day), or null. */
+  lastScannedAt: string | null;
+}
+
+/** Body of `GET /api/admin/qr/overview`. The summary covers everyone tracked; the rows are the filtered page. */
+export interface QrOverview {
+  date: string;
+  isToday: boolean;
+  summary: { total: number; active: number; used: number; expired: number; none: number };
+  maxPerDay: number;
+  ttlSeconds: number;
+  rows: QrOverviewRow[];
+  page: number;
+  pageSize: number;
+  /** Rows matching the filters, across all pages. */
+  total: number;
+}

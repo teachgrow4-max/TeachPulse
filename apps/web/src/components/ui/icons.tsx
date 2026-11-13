@@ -1,153 +1,141 @@
-import type { ReactNode, SVGProps } from 'react';
+import {
+  ArrowRight,
+  Ban,
+  Building2,
+  CalendarDays,
+  Camera,
+  CameraOff,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  CircleAlert,
+  CircleCheck,
+  CircleX,
+  Clock,
+  Copy,
+  Download,
+  Ellipsis,
+  Eye,
+  Flashlight,
+  History,
+  Hourglass,
+  IdCard,
+  Image,
+  ImageUp,
+  Inbox,
+  Info,
+  KeyRound,
+  LayoutDashboard,
+  ListFilter,
+  LoaderCircle,
+  LogOut,
+  Mail,
+  MapPin,
+  Menu,
+  Phone,
+  Plus,
+  Printer,
+  QrCode,
+  RefreshCw,
+  ScanLine,
+  Search,
+  SearchX,
+  ShieldCheck,
+  Smartphone,
+  SwitchCamera,
+  Timer,
+  TriangleAlert,
+  UserPlus,
+  UserRound,
+  Users,
+  Wifi,
+  WifiOff,
+  X,
+  type LucideIcon,
+  type LucideProps,
+} from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 /**
- * The few icons the app needs, drawn here so nothing is fetched and nothing can drift. Each one is
- * decorative: the button or label next to it carries the meaning.
+ * The app's icons: Lucide, under the names the rest of the code uses. Each one is decorative (the
+ * button or label next to it carries the meaning), so it is hidden from screen readers, and sized
+ * with Tailwind classes (`h-4 w-4`), 20 px by default.
  */
-type IconProps = Omit<SVGProps<SVGSVGElement>, 'children'>;
+export type IconProps = Omit<LucideProps, 'ref'>;
+export type AppIcon = (props: IconProps) => React.JSX.Element;
 
-function Svg({ className, children, ...rest }: IconProps & { children: ReactNode }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
+function icon(Glyph: LucideIcon, strokeWidth = 2): AppIcon {
+  const Wrapped: AppIcon = ({ className, ...rest }) => (
+    <Glyph
       aria-hidden="true"
       focusable="false"
+      strokeWidth={strokeWidth}
       className={cn('h-5 w-5 shrink-0', className)}
       {...rest}
-    >
-      {children}
-    </svg>
+    />
   );
+  return Wrapped;
 }
 
-export const CameraIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
-    <circle cx="12" cy="13" r="3" />
-  </Svg>
-);
-export const CheckIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M20 6 9 17l-5-5" />
-  </Svg>
-);
-export const XIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M18 6 6 18M6 6l12 12" />
-  </Svg>
-);
-export const AlertIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
-    <path d="M12 9v4M12 17h.01" />
-  </Svg>
-);
-export const InfoIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <circle cx="12" cy="12" r="10" />
-    <path d="M12 16v-4M12 8h.01" />
-  </Svg>
-);
-export const QrIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <rect width="5" height="5" x="3" y="3" rx="1" />
-    <rect width="5" height="5" x="16" y="3" rx="1" />
-    <rect width="5" height="5" x="3" y="16" rx="1" />
-    <path d="M21 16h-3a2 2 0 0 0-2 2v3M21 21v.01M12 7v3a2 2 0 0 1-2 2H7M3 12h.01M12 3h.01M12 16v.01M16 12h1M21 12v.01M12 21v-1" />
-  </Svg>
-);
-export const DownloadIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
-  </Svg>
-);
-export const RefreshIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5" />
-  </Svg>
-);
-export const BanIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <circle cx="12" cy="12" r="10" />
-    <path d="m4.9 4.9 14.2 14.2" />
-  </Svg>
-);
-export const LogOutIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
-  </Svg>
-);
-export const SearchIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <circle cx="11" cy="11" r="8" />
-    <path d="m21 21-4.3-4.3" />
-  </Svg>
-);
-export const UserIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-    <circle cx="12" cy="7" r="4" />
-  </Svg>
-);
-export const UserPlusIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-    <circle cx="9" cy="7" r="4" />
-    <path d="M19 8v6M22 11h-6" />
-  </Svg>
-);
-export const ClockIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <circle cx="12" cy="12" r="10" />
-    <path d="M12 6v6l4 2" />
-  </Svg>
-);
-export const ScanIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10" />
-  </Svg>
-);
-export const ImageIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <rect width="18" height="18" x="3" y="3" rx="2" />
-    <circle cx="9" cy="9" r="2" />
-    <path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21" />
-  </Svg>
-);
-export const TorchIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
-  </Svg>
-);
-export const ShieldCheckIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
-    <path d="m9 12 2 2 4-4" />
-  </Svg>
-);
-export const HistoryIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5M12 7v5l4 2" />
-  </Svg>
-);
-export const ChevronLeftIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="m15 18-6-6 6-6" />
-  </Svg>
-);
-export const ChevronRightIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="m9 18 6-6-6-6" />
-  </Svg>
-);
-export const SpinnerIcon = ({ className, ...p }: IconProps) => (
-  <Svg className={cn('spin', className)} {...p}>
-    <path d="M21 12a9 9 0 1 1-6.22-8.56" />
-  </Svg>
+export const CameraIcon = icon(Camera);
+export const CameraOffIcon = icon(CameraOff);
+export const SwitchCameraIcon = icon(SwitchCamera);
+export const CheckIcon = icon(Check, 2.5);
+export const XIcon = icon(X);
+export const AlertIcon = icon(TriangleAlert);
+export const AlertCircleIcon = icon(CircleAlert);
+export const CheckCircleIcon = icon(CircleCheck);
+export const XCircleIcon = icon(CircleX);
+export const InfoIcon = icon(Info);
+export const QrIcon = icon(QrCode);
+export const DownloadIcon = icon(Download);
+export const RefreshIcon = icon(RefreshCw);
+export const BanIcon = icon(Ban);
+export const LogOutIcon = icon(LogOut);
+export const SearchIcon = icon(Search);
+export const SearchOffIcon = icon(SearchX);
+export const UserIcon = icon(UserRound);
+export const UsersIcon = icon(Users);
+export const UserPlusIcon = icon(UserPlus);
+export const ClockIcon = icon(Clock);
+export const ScanIcon = icon(ScanLine);
+export const ImageIcon = icon(Image);
+export const ImageUpIcon = icon(ImageUp);
+export const TorchIcon = icon(Flashlight);
+export const ShieldCheckIcon = icon(ShieldCheck);
+export const HistoryIcon = icon(History);
+export const ChevronLeftIcon = icon(ChevronLeft);
+export const ChevronRightIcon = icon(ChevronRight);
+export const ChevronDownIcon = icon(ChevronDown);
+export const DashboardIcon = icon(LayoutDashboard);
+export const MoreIcon = icon(Ellipsis);
+export const MenuIcon = icon(Menu);
+export const MapPinIcon = icon(MapPin);
+export const WifiIcon = icon(Wifi);
+export const WifiOffIcon = icon(WifiOff);
+export const MailIcon = icon(Mail);
+export const PhoneIcon = icon(Phone);
+export const BuildingIcon = icon(Building2);
+export const IdCardIcon = icon(IdCard);
+export const CalendarIcon = icon(CalendarDays);
+export const PrinterIcon = icon(Printer);
+export const EyeIcon = icon(Eye);
+export const FilterIcon = icon(ListFilter);
+export const ArrowRightIcon = icon(ArrowRight);
+export const TimerIcon = icon(Timer);
+export const HourglassIcon = icon(Hourglass);
+export const InboxIcon = icon(Inbox);
+export const KeyIcon = icon(KeyRound);
+export const CopyIcon = icon(Copy);
+export const PlusIcon = icon(Plus);
+export const SmartphoneIcon = icon(Smartphone);
+
+export const SpinnerIcon: AppIcon = ({ className, ...rest }) => (
+  <LoaderCircle
+    aria-hidden="true"
+    focusable="false"
+    className={cn('spin h-5 w-5 shrink-0', className)}
+    {...rest}
+  />
 );

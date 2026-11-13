@@ -14,6 +14,7 @@ import { EmployeeQrService } from './employee-qr/service.js';
 import { EmployeeService } from './employees/service.js';
 import { OfficeService } from './office/service.js';
 import { DailyAttendanceReportService } from './attendance/daily-report.js';
+import { QrOverviewService } from './attendance/qr-overview.js';
 import { DailyQrService } from './daily-qr/service.js';
 import { QrAttendanceService } from './qr-attendance/service.js';
 import { QrService } from './verification/qr-service.js';
@@ -115,6 +116,7 @@ export function createApp({
   const qrAttendanceService = new QrAttendanceService({ db, clock });
   const dailyQrService = new DailyQrService({ db, clock, verification: verificationService });
   const dailyReportService = new DailyAttendanceReportService({ db, clock });
+  const qrOverviewService = new QrOverviewService({ db, clock });
 
   /** Per signed-in person; falls back to the client IP if (unexpectedly) unauthenticated. */
   const perUser = (req: Request): string => req.auth?.userId ?? ipKeyGenerator(req.ip ?? '');
@@ -185,6 +187,7 @@ export function createApp({
       employeeQr: employeeQrService,
       qrAttendance: qrAttendanceService,
       dailyReport: dailyReportService,
+      qrOverview: qrOverviewService,
       userLimiter: createRateLimiter({
         windowMs: 60_000,
         limit: env.USER_RATE_LIMIT_PER_MIN,

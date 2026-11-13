@@ -3,11 +3,15 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ScanLogDto, ScanRecorded } from '@teachgrow/shared';
 import { ApiError, api, messageOf } from '../lib/api';
 import { buzz, describeDevice, isTouchDevice } from '../lib/device';
+import { formatTime } from '../lib/format';
 import { CameraView } from '../components/scanner/camera-view';
 import { RecentScans, RejectionPanel, SuccessPanel } from '../components/scanner/scan-panels';
 import { decodePhoto, useCameraScanner } from '../components/scanner/use-camera-scanner';
+import { Card } from '../components/ui/card';
+import { ClockIcon, QrIcon, ScanIcon, ShieldCheckIcon, type AppIcon } from '../components/ui/icons';
 import { Notice } from '../components/ui/misc';
-import { SpinnerIcon } from '../components/ui/icons';
+import { PageContainer, PageHeader } from '../components/ui/page';
+import { useToast } from '../components/ui/toast';
 
 /**
  * The QR attendance scanner for administrators and attendance operators.
@@ -29,10 +33,31 @@ type Phase =
 
 const RECENT_KEY = ['qr-attendance', 'recent'] as const;
 
+const STEPS: Array<{ icon: AppIcon; title: string; text: string }> = [
+  {
+    icon: ShieldCheckIcon,
+    title: 'The employee verifies',
+    text: 'At the office, in their own app, they generate a code.',
+  },
+  {
+    icon: ScanIcon,
+    title: 'You scan it',
+    text: 'Hold the camera to their screen, from anywhere.',
+  },
+  {
+    icon: ClockIcon,
+    title: 'Attendance is recorded',
+    text: 'It happens straight away and works only once.',
+  },
+];
+
 export function ScannerPage() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [phase, setPhase] = useState<Phase>({ name: 'scanning' });
   const busy = useRef(false);
+  /** The last code that was sent, so a lost connection can send it again without a new scan. */
+  const lastCode = useRef<string | null>(null);
 
   const recent = useQuery({
     queryKey: RECENT_KEY,
@@ -42,6 +67,7 @@ export function ScannerPage() {
   const refreshRecent = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: RECENT_KEY });
     void queryClient.invalidateQueries({ queryKey: ['attendance-daily'] });
+    void queryClient.invalidateQueries({ queryKey: ['qr-overview'] });
   }, [queryClient]);
 
   const cameraRef = useRef<ReturnType<typeof useCameraScanner> | null>(null);
@@ -50,6 +76,7 @@ export function ScannerPage() {
     async (text: string) => {
       if (busy.current) return;
       busy.current = true;
+      lastCode.current = text;
       setPhase({ name: 'recording' });
       const cameras = cameraRef.current;
       const cameraLabel = cameras?.cameras.find((c) => c.id === cameras.cameraId)?.label;
@@ -66,19 +93,30 @@ export function ScannerPage() {
           },
         });
         buzz([30, 40, 90]);
+        toast.show({
+          tone: 'success',
+          title: `${result.employee.fullName} ${result.action === 'CHECK_IN' ? 'checked in' : 'checked out'}`,
+          text: `Recorded at ${formatTime(result.recordedAt)}`,
+        });
         setPhase({ name: 'done', result });
       } catch (error) {
         buzz([80, 60, 80]);
-        setPhase({
-          name: 'rejected',
-          error: error instanceof ApiError ? error : new ApiError(0, 'UNKNOWN', messageOf(error)),
-        });
+        const refused =
+          error instanceof ApiError ? error : new ApiError(0, 'UNKNOWN', messageOf(error));
+        if (refused.code === 'NETWORK_ERROR') {
+          toast.show({
+            tone: 'warning',
+            title: 'Connection problem',
+            text: 'Nothing was recorded. Check your connection and try again.',
+          });
+        }
+        setPhase({ name: 'rejected', error: refused });
       } finally {
         busy.current = false;
         refreshRecent();
       }
     },
-    [refreshRecent],
+    [refreshRecent, toast],
   );
 
   const onDecode = useCallback(
@@ -110,60 +148,71 @@ export function ScannerPage() {
   );
 
   const scanAnother = () => setPhase({ name: 'scanning' });
+  const retry = () => {
+    if (lastCode.current) void record(lastCode.current);
+  };
 
   return (
-    <div className="mx-auto grid w-full max-w-5xl gap-6 px-4 py-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-      <div className="min-w-0">
-        <h1 className="mb-1 text-2xl font-bold">Scan employee QR</h1>
-        <p className="mb-4 text-sm text-muted">
-          Hold the camera to the QR code on an employee’s screen. Their attendance is recorded
-          straight away. You can do this from anywhere.
-        </p>
+    <PageContainer>
+      <PageHeader
+        title="QR Attendance"
+        description="Scan an employee’s QR code to record their attendance. You can do this from anywhere: your own location and Wi-Fi are never checked."
+      />
 
-        {phase.name === 'scanning' || phase.name === 'recording' ? (
-          <div className="relative">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+        <div className="mx-auto w-full min-w-0 max-w-2xl lg:max-w-none">
+          {phase.name === 'scanning' || phase.name === 'recording' ? (
             <CameraView
               camera={camera}
+              busy={phase.name === 'recording'}
               onPhoto={(file) => void onPhoto(file)}
               caption="Hold the QR code inside the frame. The employee generates it in their TeachGrow app."
             />
-            {phase.name === 'recording' ? (
-              <div
-                role="status"
-                className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-3xl bg-stage/70 text-white backdrop-blur-[2px]"
-              >
-                <SpinnerIcon className="h-9 w-9" />
-                <p className="text-sm font-semibold">Recording attendance…</p>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+          ) : null}
 
-        {phase.name === 'rejected' ? (
-          <div className="mx-auto max-w-xl py-6">
-            <RejectionPanel error={phase.error} onNext={scanAnother} />
-          </div>
-        ) : null}
+          {phase.name === 'rejected' ? (
+            <RejectionPanel error={phase.error} onNext={scanAnother} onRetry={retry} />
+          ) : null}
 
-        {phase.name === 'done' ? (
-          <div className="mx-auto max-w-xl py-6">
+          {phase.name === 'done' ? (
             <SuccessPanel result={phase.result} onNext={scanAnother} />
-          </div>
-        ) : null}
-      </div>
+          ) : null}
 
-      <aside className="min-w-0">
-        <RecentScans items={recent.data} loading={recent.isLoading} />
-        {recent.isError ? (
-          <Notice tone="warning" className="mt-3">
-            Recent scans could not be loaded.
-          </Notice>
-        ) : null}
-        <p className="mt-4 text-xs text-muted">
-          A QR code works once and only for a minute or two. If a scan says a code has expired or
-          was already used, ask the employee to generate a new one.
-        </p>
-      </aside>
-    </div>
+          <Card className="mt-6 p-5">
+            <h2 className="text-sm font-semibold">How it works</h2>
+            <ol className="mt-4 flex flex-col gap-4">
+              {STEPS.map(({ icon: Icon, title, text }, index) => (
+                <li key={title} className="flex items-start gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand">
+                    <Icon className="h-[1.1rem] w-[1.1rem]" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold leading-tight">
+                      <span className="mr-1 text-muted tabular-nums">{index + 1}.</span>
+                      {title}
+                    </p>
+                    <p className="mt-0.5 text-sm text-muted">{text}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </Card>
+        </div>
+
+        <aside className="min-w-0 space-y-4">
+          <RecentScans items={recent.data} loading={recent.isLoading} />
+          {recent.isError ? (
+            <Notice tone="warning">Recent scans could not be loaded.</Notice>
+          ) : null}
+          <Card className="flex items-start gap-3 p-4 text-sm text-muted">
+            <QrIcon className="mt-0.5 h-5 w-5 text-brand" />
+            <p>
+              A QR code works once and only for a minute or two. If a scan says a code has expired
+              or was already used, ask the employee to generate a new one.
+            </p>
+          </Card>
+        </aside>
+      </div>
+    </PageContainer>
   );
 }

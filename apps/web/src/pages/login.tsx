@@ -3,10 +3,10 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { landingFor } from '../lib/routes';
+import { AuthLayout } from '../components/layout/auth-layout';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Field, Input } from '../components/ui/form';
-import { QrIcon } from '../components/ui/icons';
 import { Notice } from '../components/ui/misc';
 
 function friendly(error: unknown): string {
@@ -59,55 +59,45 @@ export function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-dvh items-center justify-center px-4 py-10">
-      <div className="w-full max-w-sm">
-        <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand text-brand-fg shadow-card">
-            <QrIcon className="h-8 w-8" />
-          </span>
-          <div>
-            <h1 className="text-2xl font-bold">TeachGrow Attendance</h1>
-            <p className="text-sm text-muted">Sign in with your work account</p>
-          </div>
-        </div>
-        <Card className="p-5">
-          <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-4" noValidate>
-            {error ? <Notice tone="danger">{error}</Notice> : null}
-            <Field label="Email">
-              {(props) => (
-                <Input
-                  {...props}
-                  type="email"
-                  autoComplete="username"
-                  inputMode="email"
-                  autoCapitalize="none"
-                  required
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                />
-              )}
-            </Field>
-            <Field label="Password">
-              {(props) => (
-                <Input
-                  {...props}
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                />
-              )}
-            </Field>
-            <Button type="submit" size="lg" loading={busy} disabled={!email || !password}>
-              Sign in
-            </Button>
-          </form>
-        </Card>
-        <p className="mt-4 text-center text-xs text-muted">
-          Forgot your password? Ask HR to reset it for you.
-        </p>
-      </div>
-    </main>
+    <AuthLayout
+      title="Welcome back"
+      subtitle="Sign in with your work account."
+      footer="Forgot your password? Ask HR to reset it for you."
+    >
+      <Card className="p-5 sm:p-6">
+        <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-4" noValidate>
+          {error ? <Notice tone="danger">{error}</Notice> : null}
+          <Field label="Email">
+            {(props) => (
+              <Input
+                {...props}
+                type="email"
+                autoComplete="username"
+                inputMode="email"
+                autoCapitalize="none"
+                required
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
+            )}
+          </Field>
+          <Field label="Password">
+            {(props) => (
+              <Input
+                {...props}
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            )}
+          </Field>
+          <Button type="submit" size="lg" loading={busy} disabled={!email || !password}>
+            Sign in
+          </Button>
+        </form>
+      </Card>
+    </AuthLayout>
   );
 }

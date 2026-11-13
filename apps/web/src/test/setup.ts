@@ -7,10 +7,13 @@ afterEach(() => {
 });
 
 // jsdom has no layout engine; these are the few browser APIs the app touches at render time.
+// A test window is a wide one: every `min-width` query matches (so the app shows its desktop layout:
+// the sidebar, tables) and no `max-width` one does. A test that is about the phone layout replaces
+// `window.matchMedia` with an answer of its own.
 if (!window.matchMedia) {
   window.matchMedia = (query: string) =>
     ({
-      matches: false,
+      matches: /min-width/.test(query),
       media: query,
       onchange: null,
       addEventListener: () => {},

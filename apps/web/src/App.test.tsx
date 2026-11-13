@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthUserDto } from '@teachgrow/shared';
@@ -62,6 +62,19 @@ const signedInAs = (
     }),
     'GET /api/qr-attendance/recent': json(200, { items: [] }),
     'GET /api/admin/departments': json(200, { items: [] }),
+    'GET /api/admin/employees': json(200, { items: [], page: 1, pageSize: 200, total: 0 }),
+    'GET /api/admin/qr-scans': json(200, { items: [], page: 1, pageSize: 25, total: 0 }),
+    'GET /api/admin/qr/overview': json(200, {
+      date: '2026-11-02',
+      isToday: true,
+      summary: { total: 0, active: 0, used: 0, expired: 0, none: 0 },
+      maxPerDay: 5,
+      ttlSeconds: 90,
+      rows: [],
+      page: 1,
+      pageSize: 15,
+      total: 0,
+    }),
     ...extra,
   });
 
@@ -227,10 +240,13 @@ describe('who sees what', () => {
     signedInAs(employee);
     renderApp(<App />, { auth: true, route: '/scanner' });
     expect(await screen.findByText('You do not have access to this page')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Scan QR' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Attendance' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'QR Attendance' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Dashboard' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'QR Management' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Scan History' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Add Employee' })).toBeNull();
     expect(screen.getAllByRole('link', { name: 'Attendance QR' }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('link', { name: 'My profile' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('link', { name: 'My Profile' }).length).toBeGreaterThan(0);
   });
 
   it('keeps an employee out of the attendance dashboard', async () => {
@@ -242,9 +258,10 @@ describe('who sees what', () => {
   it('opens an attendance operator on the scanner, with no dashboard', async () => {
     signedInAs(operator);
     renderApp(<App />, { auth: true, route: '/' });
-    expect(await screen.findByRole('heading', { name: 'Scan employee QR' })).toBeInTheDocument();
-    expect(screen.getAllByRole('link', { name: 'Scan QR' }).length).toBeGreaterThan(0);
-    expect(screen.queryByRole('link', { name: 'Attendance' })).toBeNull();
+    expect(await screen.findByRole('heading', { name: 'QR Attendance' })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'QR Attendance' }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('link', { name: 'Dashboard' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'QR Management' })).toBeNull();
   });
 
   it('keeps an operator out of the attendance dashboard', async () => {
@@ -257,14 +274,62 @@ describe('who sees what', () => {
     signedInAs(admin);
     renderApp(<App />, { auth: true, route: '/' });
     expect(
-      await screen.findByRole('heading', { name: 'Attendance management' }),
+      await screen.findByRole('heading', { name: 'Attendance Dashboard' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Scan Employee QR/ })).toHaveAttribute(
       'href',
       '/scanner',
     );
-    expect(screen.getAllByRole('link', { name: 'Scan QR' }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('link', { name: 'Attendance' }).length).toBeGreaterThan(0);
+    // everything an administrator can open is in the menu
+    const menu = within(screen.getByRole('navigation', { name: 'Main' }));
+    for (const [name, href] of [
+      ['Dashboard', '/admin/attendance'],
+      ['QR Attendance', '/scanner'],
+      ['QR Management', '/admin/qr'],
+      ['Scan History', '/admin/scan-history'],
+      ['Add Employee', '/admin/employees/new'],
+      ['My Profile', '/profile'],
+    ] as const) {
+      expect(menu.getByRole('link', { name }), name).toHaveAttribute('href', href);
+    }
+    expect(menu.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page');
+    // this administrator's own attendance is not tracked, so they have no code of their own to make
+    expect(menu.queryByRole('link', { name: 'Attendance QR' })).toBeNull();
+  });
+
+  it('gives an administrator whose own attendance is tracked their own Attendance QR page too', async () => {
+    signedInAs(person({ ...admin, attendanceRequired: true }));
+    renderApp(<App />, { auth: true, route: '/' });
+    await screen.findByRole('heading', { name: 'Attendance Dashboard' });
+    const menu = within(screen.getByRole('navigation', { name: 'Main' }));
+    expect(menu.getByRole('link', { name: 'Attendance QR' })).toHaveAttribute(
+      'href',
+      '/attendance-qr',
+    );
+  });
+
+  it('lets an administrator open QR management and the scan history', async () => {
+    const user = userEvent.setup();
+    signedInAs(admin);
+    renderApp(<App />, { auth: true, route: '/' });
+    await screen.findByRole('heading', { name: 'Attendance Dashboard' });
+    const menu = within(screen.getByRole('navigation', { name: 'Main' }));
+    await user.click(menu.getByRole('link', { name: 'QR Management' }));
+    expect(await screen.findByRole('heading', { name: 'QR Management' })).toBeInTheDocument();
+    await user.click(menu.getByRole('link', { name: 'Scan History' }));
+    expect(await screen.findByRole('heading', { name: 'Scan History' })).toBeInTheDocument();
+  });
+
+  it('keeps employees and operators out of QR management and the scan history', async () => {
+    for (const who of [employee, operator]) {
+      for (const route of ['/admin/qr', '/admin/scan-history']) {
+        signedInAs(who);
+        const { unmount } = renderApp(<App />, { auth: true, route });
+        expect(await screen.findByText('You do not have access to this page')).toBeInTheDocument();
+        unmount();
+        session.set(null);
+      }
+    }
   });
 
   it('tells the lobby screen account that this app is not for it', async () => {
@@ -285,5 +350,76 @@ describe('who sees what', () => {
     expect(called('POST /api/auth/logout')[0]?.headers.get('x-requested-with')).toBe(
       'teachgrow-web',
     );
+  });
+});
+
+describe('on a phone', () => {
+  /** A narrow window: no `min-width` query matches, so the app shows its phone layout. */
+  const phone = () => {
+    const wide = window.matchMedia;
+    window.matchMedia = (query: string) =>
+      ({
+        matches: false,
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }) as unknown as MediaQueryList;
+    return () => {
+      window.matchMedia = wide;
+    };
+  };
+
+  it('gives an administrator a tab bar, with the rest of the pages under "More"', async () => {
+    const restore = phone();
+    try {
+      const user = userEvent.setup();
+      signedInAs(admin);
+      renderApp(<App />, { auth: true, route: '/' });
+      await screen.findByRole('heading', { name: 'Attendance Dashboard' });
+
+      const bar = within(screen.getByRole('navigation', { name: 'Main' }));
+      for (const name of ['Dashboard', 'QR Attendance', 'QR Management', 'Scan History']) {
+        expect(bar.getByRole('link', { name }), name).toBeInTheDocument();
+      }
+      expect(bar.queryByRole('link', { name: 'Add Employee' })).toBeNull();
+
+      await user.click(bar.getByRole('button', { name: 'More' }));
+      const sheet = await screen.findByRole('dialog', { name: 'More' });
+      expect(within(sheet).getByRole('link', { name: 'My Profile' })).toHaveAttribute(
+        'href',
+        '/profile',
+      );
+      await user.click(within(sheet).getByRole('link', { name: 'Add Employee' }));
+      expect(await screen.findByRole('heading', { name: 'Add Employee' })).toBeInTheDocument();
+      // choosing a page closes the sheet
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'More' })).toBeNull());
+    } finally {
+      restore();
+    }
+  });
+
+  it('gives an employee two tabs, and signs out from the account menu', async () => {
+    const restore = phone();
+    try {
+      const user = userEvent.setup();
+      const { called } = signedInAs(employee, { 'POST /api/auth/logout': json(204) });
+      renderApp(<App />, { auth: true, route: '/' });
+      await screen.findByRole('heading', { name: 'Attendance QR' });
+
+      const bar = within(screen.getByRole('navigation', { name: 'Main' }));
+      expect(bar.getByRole('link', { name: 'Attendance QR' })).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
+      expect(bar.getByRole('link', { name: 'My Profile' })).toBeInTheDocument();
+      expect(bar.queryByRole('button', { name: 'More' })).toBeNull();
+
+      await user.click(screen.getByRole('button', { name: 'Account menu' }));
+      await user.click(await screen.findByRole('menuitem', { name: 'Sign out' }));
+      expect(await screen.findByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+      expect(called('POST /api/auth/logout')).toHaveLength(1);
+    } finally {
+      restore();
+    }
   });
 });

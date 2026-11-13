@@ -4,10 +4,12 @@ import {
   createEmployeeSchema,
   dailyAttendanceQuerySchema,
   listEmployeesQuerySchema,
+  qrOverviewQuerySchema,
   updateEmployeeSchema,
   uuidSchema,
 } from '@teachgrow/shared';
 import type { DailyAttendanceReportService } from '../attendance/daily-report.js';
+import type { QrOverviewService } from '../attendance/qr-overview.js';
 import type { DeviceService } from '../devices/service.js';
 import type { EmployeeQrService } from '../employee-qr/service.js';
 import type { EmployeeService } from '../employees/service.js';
@@ -28,6 +30,7 @@ export interface AdminRouterDeps {
   employeeQr: EmployeeQrService;
   qrAttendance: QrAttendanceService;
   dailyReport: DailyAttendanceReportService;
+  qrOverview: QrOverviewService;
   userLimiter: RequestHandler;
 }
 
@@ -36,7 +39,8 @@ export interface AdminRouterDeps {
  * active account, no pending forced password change) and `requireRole('admin')`.
  */
 export function adminRouter(deps: AdminRouterDeps): Router {
-  const { auth, employees, office, devices, employeeQr, qrAttendance, dailyReport } = deps;
+  const { auth, employees, office, devices, employeeQr, qrAttendance, dailyReport, qrOverview } =
+    deps;
   const router = Router();
 
   router.use(auth.authenticate(), auth.requireRole('admin'), deps.userLimiter);
@@ -49,6 +53,13 @@ export function adminRouter(deps: AdminRouterDeps): Router {
   router.get('/attendance/daily', async (req, res) => {
     const query = dailyAttendanceQuerySchema.parse(req.query);
     res.json(await dailyReport.forDate(query.date));
+  });
+
+  // GET /api/admin/qr/overview?date=&search=&departmentId=&state=&page=&pageSize=
+  //   where each employee's attendance QR stands on a day (live, scanned, expired, never made)
+  router.get('/qr/overview', async (req, res) => {
+    const query = qrOverviewQuerySchema.parse(req.query);
+    res.json(await qrOverview.overview(query));
   });
 
   // ---- departments ---------------------------------------------------------------------

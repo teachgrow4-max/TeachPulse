@@ -2,12 +2,14 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CreateEmployeeResponse, DepartmentDto } from '@teachgrow/shared';
 import { api, ApiError, messageOf } from '../lib/api';
+import { Avatar, Notice } from '../components/ui/misc';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Field, Input, Select } from '../components/ui/form';
-import { CheckIcon } from '../components/ui/icons';
-import { Notice } from '../components/ui/misc';
+import { CopyIcon, UserPlusIcon } from '../components/ui/icons';
+import { PageContainer, PageHeader } from '../components/ui/page';
 import { useToast } from '../components/ui/toast';
+import { SuccessMark } from '../components/scanner/scan-panels';
 
 const ROLES = [
   { value: 'employee', label: 'Employee' },
@@ -73,47 +75,49 @@ function Created({ result, onAnother }: { result: CreateEmployeeResponse; onAnot
   };
 
   return (
-    <Card className="flex flex-col gap-5 p-5">
-      <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-success-soft text-success">
-          <CheckIcon />
-        </span>
+    <Card className="pop-in overflow-hidden">
+      <div className="flex flex-col items-center gap-3 bg-gradient-to-b from-success-soft to-surface px-6 pb-6 pt-8 text-center">
+        <SuccessMark />
         <div>
-          <h2 className="text-lg font-bold">{employee.fullName} was added</h2>
-          <p className="text-sm text-muted">
+          <h2 className="text-xl font-semibold tracking-tight">{employee.fullName} was added</h2>
+          <p className="mt-1 text-sm text-muted">
             <span className="font-mono">{employee.employeeCode}</span> · {employee.email}
           </p>
         </div>
       </div>
 
-      {temporaryPassword ? (
-        <>
-          <div>
-            <p className="text-sm font-medium">One-time password</p>
-            <div className="mt-1.5 flex flex-wrap items-center gap-2">
-              <code
-                data-testid="temporary-password"
-                className="select-all rounded-xl border border-line bg-surface-2 px-4 py-2.5 font-mono text-base tracking-wide"
-              >
-                {temporaryPassword}
-              </code>
-              <Button variant="outline" onClick={() => void copy()}>
-                Copy
-              </Button>
+      <div className="flex flex-col gap-5 border-t border-line p-5 sm:p-6">
+        {temporaryPassword ? (
+          <>
+            <div>
+              <p className="text-sm font-medium">One-time password</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <code
+                  data-testid="temporary-password"
+                  className="select-all rounded-xl border border-line-strong bg-surface-2 px-4 py-2.5 font-mono text-base tracking-wide"
+                >
+                  {temporaryPassword}
+                </code>
+                <Button variant="outline" onClick={() => void copy()}>
+                  <CopyIcon className="h-4 w-4" /> Copy
+                </Button>
+              </div>
             </div>
-          </div>
-          <Notice tone="warning" title="This password is shown only once">
-            Give it to {employee.fullName} now. It is not stored anywhere you can read it again.
-            They sign in with {employee.email} and this password, and must choose their own password
-            straight away.
-          </Notice>
-        </>
-      ) : (
-        <Notice tone="info">No temporary password was generated for this account.</Notice>
-      )}
+            <Notice tone="warning" title="This password is shown only once">
+              Give it to {employee.fullName} now. It is not stored anywhere you can read it again.
+              They sign in with {employee.email} and this password, and must choose their own
+              password straight away.
+            </Notice>
+          </>
+        ) : (
+          <Notice tone="info">No temporary password was generated for this account.</Notice>
+        )}
 
-      <div>
-        <Button onClick={onAnother}>Add another employee</Button>
+        <div>
+          <Button onClick={onAnother}>
+            <UserPlusIcon className="h-4 w-4" /> Add another employee
+          </Button>
+        </div>
       </div>
     </Card>
   );
@@ -139,8 +143,9 @@ export function AddEmployeePage() {
     onSuccess: async (created) => {
       setErrors({});
       setResult(created);
-      await queryClient.invalidateQueries({ queryKey: ['employee-qr'] });
+      await queryClient.invalidateQueries({ queryKey: ['qr-overview'] });
       await queryClient.invalidateQueries({ queryKey: ['employee-picker'] });
+      await queryClient.invalidateQueries({ queryKey: ['attendance-daily'] });
     },
     onError: (error) => {
       const found = fieldErrors(error);
@@ -178,13 +183,11 @@ export function AddEmployeePage() {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6">
-      <div>
-        <h1 className="text-2xl font-bold">Add employee</h1>
-        <p className="text-sm text-muted">
-          Creates the sign-in and the profile. A one-time password is generated and shown once.
-        </p>
-      </div>
+    <PageContainer width="sm">
+      <PageHeader
+        title="Add Employee"
+        description="Creates the sign-in and the profile. A one-time password is generated and shown once."
+      />
 
       {result ? (
         <Created
@@ -195,118 +198,143 @@ export function AddEmployeePage() {
           }}
         />
       ) : (
-        <Card className="p-5">
-          <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit} noValidate>
-            <Field label="Full name" error={errors.fullName} className="sm:col-span-2">
-              {(props) => (
-                <Input
-                  {...props}
-                  required
-                  autoComplete="off"
-                  value={form.fullName}
-                  onChange={(e) => set('fullName')(e.target.value)}
-                />
-              )}
-            </Field>
-            <Field label="Email" error={errors.email} hint="They sign in with this.">
-              {(props) => (
-                <Input
-                  {...props}
-                  type="email"
-                  required
-                  autoComplete="off"
-                  value={form.email}
-                  onChange={(e) => set('email')(e.target.value)}
-                />
-              )}
-            </Field>
-            <Field
-              label="Employee ID"
-              error={errors.employeeCode}
-              hint="Letters, digits, dot, dash or underscore."
-            >
-              {(props) => (
-                <Input
-                  {...props}
-                  required
-                  autoComplete="off"
-                  value={form.employeeCode}
-                  onChange={(e) => set('employeeCode')(e.target.value)}
-                />
-              )}
-            </Field>
-            <Field label="Department (optional)" error={errors.departmentId}>
-              {(props) => (
-                <Select
-                  {...props}
-                  value={form.departmentId}
-                  onChange={(e) => set('departmentId')(e.target.value)}
-                >
-                  <option value="">No department</option>
-                  {departments.data?.map((department) => (
-                    <option key={department.id} value={department.id}>
-                      {department.name}
-                    </option>
-                  ))}
-                </Select>
-              )}
-            </Field>
-            <Field label="Designation (optional)" error={errors.designation}>
-              {(props) => (
-                <Input
-                  {...props}
-                  autoComplete="off"
-                  value={form.designation}
-                  onChange={(e) => set('designation')(e.target.value)}
-                />
-              )}
-            </Field>
-            <Field label="Phone (optional)" error={errors.phone}>
-              {(props) => (
-                <Input
-                  {...props}
-                  type="tel"
-                  autoComplete="off"
-                  value={form.phone}
-                  onChange={(e) => set('phone')(e.target.value)}
-                />
-              )}
-            </Field>
-            <Field label="Joining date" error={errors.joiningDate}>
-              {(props) => (
-                <Input
-                  {...props}
-                  type="date"
-                  required
-                  value={form.joiningDate}
-                  onChange={(e) => set('joiningDate')(e.target.value)}
-                />
-              )}
-            </Field>
-            <Field label="Role" error={errors.role} className="sm:col-span-2">
-              {(props) => (
-                <Select
-                  {...props}
-                  value={form.role}
-                  onChange={(e) => set('role')(e.target.value as Role)}
-                >
-                  {ROLES.map((role) => (
-                    <option key={role.value} value={role.value}>
-                      {role.label}
-                    </option>
-                  ))}
-                </Select>
-              )}
-            </Field>
+        <Card className="p-5 sm:p-6">
+          <form className="flex flex-col gap-6" onSubmit={submit} noValidate>
+            <section aria-labelledby="who" className="grid gap-4 sm:grid-cols-2">
+              <div className="flex items-center gap-3 sm:col-span-2">
+                <Avatar name={form.fullName || 'New employee'} size="md" />
+                <div>
+                  <h2 id="who" className="text-sm font-semibold">
+                    Who they are
+                  </h2>
+                  <p className="text-xs text-muted">The name and the details they sign in with.</p>
+                </div>
+              </div>
+              <Field label="Full name" error={errors.fullName} className="sm:col-span-2">
+                {(props) => (
+                  <Input
+                    {...props}
+                    required
+                    autoComplete="off"
+                    value={form.fullName}
+                    onChange={(e) => set('fullName')(e.target.value)}
+                  />
+                )}
+              </Field>
+              <Field label="Email" error={errors.email} hint="They sign in with this.">
+                {(props) => (
+                  <Input
+                    {...props}
+                    type="email"
+                    required
+                    autoComplete="off"
+                    value={form.email}
+                    onChange={(e) => set('email')(e.target.value)}
+                  />
+                )}
+              </Field>
+              <Field
+                label="Employee ID"
+                error={errors.employeeCode}
+                hint="Letters, digits, dot, dash or underscore."
+              >
+                {(props) => (
+                  <Input
+                    {...props}
+                    required
+                    autoComplete="off"
+                    value={form.employeeCode}
+                    onChange={(e) => set('employeeCode')(e.target.value)}
+                  />
+                )}
+              </Field>
+            </section>
 
-            <div className="sm:col-span-2">
-              <Button type="submit" loading={create.isPending}>
+            <section
+              aria-labelledby="work"
+              className="grid gap-4 border-t border-line pt-6 sm:grid-cols-2"
+            >
+              <div className="sm:col-span-2">
+                <h2 id="work" className="text-sm font-semibold">
+                  Their work
+                </h2>
+                <p className="text-xs text-muted">
+                  Where they sit, what they do and what they can use.
+                </p>
+              </div>
+              <Field label="Department (optional)" error={errors.departmentId}>
+                {(props) => (
+                  <Select
+                    {...props}
+                    value={form.departmentId}
+                    onChange={(e) => set('departmentId')(e.target.value)}
+                  >
+                    <option value="">No department</option>
+                    {departments.data?.map((department) => (
+                      <option key={department.id} value={department.id}>
+                        {department.name}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              <Field label="Designation (optional)" error={errors.designation}>
+                {(props) => (
+                  <Input
+                    {...props}
+                    autoComplete="off"
+                    value={form.designation}
+                    onChange={(e) => set('designation')(e.target.value)}
+                  />
+                )}
+              </Field>
+              <Field label="Phone (optional)" error={errors.phone}>
+                {(props) => (
+                  <Input
+                    {...props}
+                    type="tel"
+                    autoComplete="off"
+                    value={form.phone}
+                    onChange={(e) => set('phone')(e.target.value)}
+                  />
+                )}
+              </Field>
+              <Field label="Joining date" error={errors.joiningDate}>
+                {(props) => (
+                  <Input
+                    {...props}
+                    type="date"
+                    required
+                    value={form.joiningDate}
+                    onChange={(e) => set('joiningDate')(e.target.value)}
+                  />
+                )}
+              </Field>
+              <Field label="Role" error={errors.role} className="sm:col-span-2">
+                {(props) => (
+                  <Select
+                    {...props}
+                    value={form.role}
+                    onChange={(e) => set('role')(e.target.value as Role)}
+                  >
+                    {ROLES.map((role) => (
+                      <option key={role.value} value={role.value}>
+                        {role.label}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+            </section>
+
+            <div className="flex justify-end border-t border-line pt-5">
+              <Button type="submit" size="lg" loading={create.isPending}>
                 Add employee
               </Button>
             </div>
           </form>
         </Card>
       )}
-    </div>
+    </PageContainer>
   );
 }

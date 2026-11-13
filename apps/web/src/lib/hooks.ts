@@ -10,6 +10,26 @@ export function useDebounced<T>(value: T, delayMs = 300): T {
   return debounced;
 }
 
+/**
+ * Whether a CSS media query matches right now, and keeps matching as the window changes. Where the
+ * browser cannot answer (an old one, or a test environment), `fallback` is used.
+ */
+export function useMediaQuery(query: string, fallback = true): boolean {
+  const supported = typeof window !== 'undefined' && typeof window.matchMedia === 'function';
+  const [matches, setMatches] = useState(() =>
+    supported ? window.matchMedia(query).matches : fallback,
+  );
+  useEffect(() => {
+    if (!supported) return;
+    const list = window.matchMedia(query);
+    const update = () => setMatches(list.matches);
+    update();
+    list.addEventListener('change', update);
+    return () => list.removeEventListener('change', update);
+  }, [query, supported]);
+  return matches;
+}
+
 /** Whole seconds left until `iso`, ticking once a second (0 once it has passed, or when `iso` is null). */
 export function useSecondsLeft(iso: string | null): number {
   const [now, setNow] = useState(() => Date.now());

@@ -20,8 +20,11 @@ export function Pager({
   const first = (page - 1) * pageSize + 1;
   const last = Math.min(total, page * pageSize);
   return (
-    <nav aria-label="Pages" className="flex items-center justify-between gap-3 px-1 pt-3">
-      <p className="text-sm text-muted">
+    <nav
+      aria-label="Pages"
+      className="flex flex-wrap items-center justify-between gap-3 px-1 pt-3 sm:px-0"
+    >
+      <p className="text-sm text-muted tabular-nums">
         {first}–{last} of {total}
       </p>
       <div className="flex items-center gap-2">
@@ -34,7 +37,7 @@ export function Pager({
         >
           <ChevronLeftIcon className="h-4 w-4" /> Previous
         </Button>
-        <span className="text-sm text-muted" aria-live="polite">
+        <span className="min-w-20 text-center text-sm text-muted tabular-nums" aria-live="polite">
           Page {page} of {pages}
         </span>
         <Button

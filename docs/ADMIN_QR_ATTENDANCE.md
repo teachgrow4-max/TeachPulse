@@ -6,7 +6,7 @@ How attendance is recorded with QR codes. Built on the office-verification engin
 
 ```
 EMPLOYEE   sign in -> location + office network checked -> Generate Attendance QR -> shows it
-ADMIN      sign in -> Attendance dashboard -> Scan QR -> attendance recorded, employee shown
+ADMIN      sign in -> Dashboard -> QR Attendance -> scan -> attendance recorded, employee shown
 ```
 
 **The two halves are completely separate.**
@@ -37,12 +37,12 @@ The distance limit is the office's own `geofence_radius_m`. **The default is now
 
 ## What the administrator does
 
-Page **Scan QR** (`/scanner`), reachable from the **Attendance** dashboard.
+Page **QR Attendance** (`/scanner`), in the menu.
 
 1. Open the page; the camera opens (everything is decoded on the device; no video is sent anywhere).
 2. Point it at the employee's screen.
-3. The server validates the code and records the attendance **in one step**. The page shows the employee's **name, employee ID, department, attendance date, check-in time (and check-out time) and status** (*Present* / *Late*), with a success animation. There is no confirm button.
-4. *Scan another employee*.
+3. The server validates the code and records the attendance **in one step** ("Verifying code…" shows while it does). The page then shows an animated tick, **Checked in** or **Checked out**, "Attendance recorded successfully", the **exact time**, and the employee's verification panel: **photo or initials, name, employee ID, department, designation, QR status** (*Valid, now used*), **status** (*Present* / *Late*), the attendance date and the check-in and check-out times. There is no confirm button.
+4. *Scan another employee*. A **Recent scans** timeline (photo or initials, name, employee ID, how long ago, result) sits beside the camera.
 
 Refusals are explained in words, and the employee's name is shown when the code identified one:
 
@@ -55,18 +55,32 @@ Refusals are explained in words, and the employee's name is shown when the code 
 | The employee was deactivated after generating | **Employee account is inactive** |
 | The day has moved on (they were checked in some other way meanwhile) | **This QR code is out of date** |
 | Holiday, weekly off, leave, on a break, already checked out | the reason, and nothing is recorded |
+| The server cannot be reached | **Cannot reach the server**; nothing was recorded; **Try again** sends the same code again without scanning it again |
 
 Nobody can record **their own** attendance (`SELF_SCAN_FORBIDDEN`): an administrator who also marks their own attendance has another administrator scan their code.
 
 ## The attendance dashboard (administrators)
 
-Page **Attendance** (`/admin/attendance`), the administrator's home page.
+Page **Dashboard** (`/admin/attendance`), the administrator's home page.
 
-- **Daily report** for today (refreshed every 30 s) or any past day: *Present*, *Late arrivals*, *Absent*, *On leave*; a table with every tracked employee, their status, **check-in and check-out times**; filters (everyone / present / late / absent); **Download CSV**.
-- **Warnings** for the day: how many **duplicate scans** and how many **invalid or expired codes**, with a link to the history.
-- **Scan history** (tab): every scan, recorded or refused, with who scanned, which device, from which address (administrators only), the outcome, and filters by date, employee, scanner and outcome.
+- **Daily report** for today (refreshed every 30 s) or any past day: *Present*, *Late arrivals*, *Absent*, *On leave*; a table with every tracked employee, their status, **check-in and check-out times**; filters (everyone / present / late / absent, each with its count); **Download CSV**.
+- **Warnings** for the day: how many **duplicate scans** and how many **invalid or expired codes**, with a link to the scan history.
 
 *Absent* means "tracked, active, nothing recorded for that day, and the day is not a holiday, a weekly off or approved leave". Early in the day that simply means "not in yet".
+
+## Scan history (administrators)
+
+Page **Scan History** (`/admin/scan-history`): every scan, recorded or refused, with the employee (photo or initials, name, employee ID), the outcome, **who held the camera**, the device, and the address (administrators only). Filters: employee (search by name, ID or email), dates, who scanned, and outcome; 25 per page. A link such as `/admin/scan-history?employee=<id>&name=<name>` opens it for one person.
+
+## QR management (administrators)
+
+Page **QR Management** (`/admin/qr`): where each tracked employee's attendance QR stands on a day (today by default, refreshed every 15 s).
+
+- Five cards: **Total employees**, **Active QR codes** (live right now), **Scanned**, **Missing QR codes** (none made that day) and **Expired codes** (made but never scanned).
+- A search (name, employee ID or email), filters by department and QR status, and a day picker.
+- A table with the employee, employee ID, department, **QR status** (and what the latest code was for and when it matters), **last scanned**, and a row menu: **View QR activity** (the day's code and the employee's latest scans) and **Open scan history**. On a phone or a tablet each employee is a card.
+
+There is nothing to view, download, print, regenerate or revoke here, on purpose: a code is made by the employee on their own device after the office check, only they see it (once), and the server keeps only its hash. (The ID-card version of this page did those things for permanent card codes, which no longer record attendance.) A "revoke the live code" action could be added later; it is not built.
 
 ## How a code works
 
@@ -115,7 +129,8 @@ Errors have the usual shape `{ error: { code, message, requestId, details? } }`.
 | `POST /api/qr-attendance/scan` | admin, attendance operator | `{ payload, scanner: { kind, label?, camera? } }` -> 200 with the employee and the day's record, or an error with `details.employee` / `details.firstRecordedAt`. **No location, no address check, no extra fields (a body that sends `gps` is 400).** |
 | `GET /api/qr-attendance/recent?limit=` | admin, operator | the caller's own latest scans |
 | `GET /api/admin/attendance/daily?date=` | admin | the day's report (summary, warnings, one row per tracked employee) |
-| `GET /api/admin/qr-scans?...` | admin | scan history |
+| `GET /api/admin/qr-scans?...` | admin | scan history (each person carries `avatarUrl` when they have a photo) |
+| `GET /api/admin/qr/overview?date=&search=&departmentId=&state=&page=&pageSize=` | admin | where each tracked employee's code stands on a day: a summary of everyone (`total`, `active`, `used`, `expired`, `none`) and a filtered, paged list of rows. Read-only; never returns a code or its hash |
 
 New error codes: `QR_EXPIRED` 422, `QR_ALREADY_USED` 409, `QR_SUPERSEDED` 422, `QR_LIMIT_REACHED` 429. Existing codes (`EMPLOYEE_QR_INVALID`, `EMPLOYEE_INACTIVE`, `SELF_SCAN_FORBIDDEN`, `SCAN_ACTION_MISMATCH`, `HOLIDAY`, `WEEKLY_OFF`, `ON_LEAVE`, `ACTIVE_BREAK`, `ALREADY_CHECKED_OUT`, `VERIFICATION_*`) are returned as before.
 
@@ -167,12 +182,20 @@ Why the ID card could not stay: with nobody proving presence at scan time, a per
 | --- | --- | --- |
 | `/login`, `/change-password` | everyone | sign in; choose your own password when you signed in with a temporary one |
 | `/attendance-qr` | employee (home page), administrator who marks attendance | location and Wi-Fi check, Generate Attendance QR, the code with its countdown, confirmation |
-| `/profile` | everyone | the person's details |
-| `/admin/attendance` | admin (home page) | daily report, warnings, scan history |
-| `/scanner` | admin, operator (the operator's home page) | camera scanner, instant result, recent scans |
+| `/profile` | everyone | the person's details, and a link to change the password |
+| `/admin/attendance` | admin (home page) | Dashboard: daily report, warnings |
+| `/scanner` | admin, operator (the operator's home page) | QR Attendance: camera scanner, instant result, recent scans |
+| `/admin/qr` | admin | QR Management: where each employee's code stands |
+| `/admin/scan-history` | admin | every scan, with filters and pages |
 | `/admin/employees/new` | admin | add an employee (a one-time password is generated and shown once) |
 
-The scanner decodes in a web worker on the device (`qr-scanner`); it works on Android and iOS browsers and desktop webcams (an https page, or localhost, is required). It covers permission asked / denied, no camera, camera in use, insecure page, a camera picker, a torch button where the camera has one, and **Scan from a photo** for people who cannot use the live camera. Accessibility: labelled controls, `aria-live` status messages, contrast of at least 4.5:1 in light and dark, and `prefers-reduced-motion` turns the animations into plain end states.
+The scanner decodes in a web worker on the device (`qr-scanner`); it works on Android and iOS browsers and desktop webcams (an https page, or localhost, is required). It covers permission asked / denied, no camera, camera in use, insecure page, a **switch camera** button where there is more than one, a light button where the camera has a torch, and **Scan from a photo** for people who cannot use the live camera. Accessibility: labelled controls, `aria-live` status messages, contrast of at least 4.5:1 in light and dark, and `prefers-reduced-motion` turns the animations into plain end states.
+
+### Look and feel
+
+One set of design tokens in `src/index.css` (colour, shadow, radius, motion; light and dark): deep teal and emerald as the brand, a quiet neutral canvas, white cards with a hairline border and a very soft shadow. The typeface is Inter, **self-hosted** through `@fontsource-variable/inter`, so nothing is fetched from another site and the content security policy below still holds. Icons are Lucide (`lucide-react`). Shared pieces live in `src/components/ui`: button, badge, card, avatar, stat card, table, segmented filter, dialog, dropdown menu (Radix), toast, empty state, skeleton, page header.
+
+The layout follows the screen: from 1024 px a **sidebar** (grouped menu, the signed-in person, sign out); below that a slim top bar with an account menu and a **tab bar** under the thumb, with **More** for the rest. Dialogs are sheets that slide up from the bottom on a phone. The scanner is a tall portrait frame on a phone and a 4:3 frame on a laptop. Tables become cards below 1100 px. Pages ease in, cards lift on hover, the scanner sweeps, the success tick draws itself; all of it is plain CSS and switches off for people who ask their device for less motion. Nothing on a screen is invented: every number, name and time comes from the API.
 
 ### Trying it without Supabase
 
@@ -216,7 +239,7 @@ The build tools (TypeScript, Vite, Tailwind) are development dependencies. The r
 
 ## What was verified, and what was not
 
-**Automated (all passing, run on 2026-11-12):** 908 integration tests (19 files, embedded Postgres 17 and an in-repo stand-in for Supabase Auth; 34 of them in `daily-qr.integration.test.ts`), 306 API unit tests, 27 shared tests and 95 web tests (Vitest, jsdom, Testing Library). Typecheck (shared, API, web), ESLint, Prettier and the production builds of the API and the web app are clean. The existing engine, verification, device, auth and office tests run unchanged, apart from the places that named the old 100 m default or scanned an ID card.
+**Automated (all passing, run on 2026-11-12):** 914 integration tests (19 files, embedded Postgres 17 and an in-repo stand-in for Supabase Auth; 40 of them in `daily-qr.integration.test.ts`), 306 API unit tests, 27 shared tests and 122 web tests (Vitest, jsdom, Testing Library). Typecheck (shared, API, web), ESLint, Prettier and the production builds of the API and the web app are clean. The existing engine, verification, device, auth and office tests run unchanged, apart from the places that named the old 100 m default or scanned an ID card.
 
 **Mutation checks** (a safeguard broken on purpose, the new tests run, the file restored byte for byte): accepting expired codes (3 tests failed), not spending the employee's verification (1), allowing a person to scan themselves (1), and letting employees into the scanner router (1, after the test was sharpened: the first version of that test still passed because the database function also refuses non-scanners, so it could not tell the two layers apart).
 
@@ -227,6 +250,15 @@ The build tools (TypeScript, Vite, Tailwind) are development dependencies. The r
 - The employee's screen turned into *Checked in, recorded at 04:23 PM* without a reload, and offered a check-out code next.
 - Scanning the same code again said **Already scanned**, who it was, and when it was first recorded; scanning an expired code said **This QR code has expired**; both appeared in the history and in the dashboard's warnings.
 - The dashboard (present, late, absent, check-in times, warnings, history) and the phone layout of the employee page (375 px wide, no horizontal scroll).
+
+**The interface redesign** (new look, new menu, QR Management and Scan History pages) was checked in the same browser, against the demo API, signed in as the demo administrator and employee (not as a real person):
+
+- At **1280 px, 768 px and 375 px wide**, in light mode, and the employee page also in dark mode: login, dashboard, QR Attendance, QR Management, Scan History, Add Employee, My Profile and the employee's Attendance QR. The sidebar becomes a top bar and a tab bar with a **More** sheet below 1024 px; tables become cards below 1100 px; the phone scanner is a tall portrait frame; nothing scrolls sideways.
+- The whole flow again with the new screens: the employee (30 m from the invented office) passed the check and made a code; the administrator's scanner read it and showed the confirmation (animated tick, exact time, the employee's panel, a toast and the new entry in *Recent scans*); the same code again gave **Already scanned**; a QR code from a poster gave **QR code not recognised**. QR Management then showed that employee as *Scanned* with *Last scanned: Today*, and its row menu opened **View QR activity** with the day's code and the latest scans. The scan history listed both scans with who held the camera.
+- The browser console showed no errors apart from the 409 that the duplicate scan is supposed to get.
+- A colour fix came out of looking: white text on the light end of the brand gradient was below 4.5:1, so the gradient now runs from deep teal to a darker emerald.
+
+The new overview query was also run **read-only against the real Supabase project** (inside a transaction that was rolled back): it returned the one tracked employee as *Not generated*, with the policy's 90 s and 5 per day.
 
 A scripted pass against the same running API used three employee accounts, an operator and an administrator: refused location (400 m), refused reuse of a verification, a replaced code (`QR_SUPERSEDED`), an employee refused at the scanner (403), a scan that tried to send a location (400), the operator and the administrator each recording a different employee, a duplicate (409), a web address and an unknown code (422), and the dashboard totals (3 present, 3 late, 2 duplicate warnings, 4 invalid or expired warnings).
 
@@ -245,7 +277,7 @@ The scenarios the request lists:
 
 **Not verified:**
 
-- **A real camera and a real phone.** The web tests use a stand-in camera; nobody has scanned a real QR on screen from a real device (iOS Safari especially). An on-screen QR is a different thing to a printed one (brightness, glare, moiré).
+- **A real camera and a real phone.** The web tests use a stand-in camera; nobody has scanned a real QR on screen from a real device (iOS Safari especially). An on-screen QR is a different thing to a printed one (brightness, glare, moiré). The phone layouts were checked in a desktop browser pane emulating a 375 px screen, not on a phone, so the tab bar's safe-area spacing and the bottom sheets are unconfirmed on iOS.
 - **The Wi-Fi check against a real office network** (the real public address range is not known here), and **GPS accuracy on real laptops and phones**.
 - **True parallel races.** "Two scanners at once" runs against a single-connection embedded database; the guarantee is the row lock and the unique indexes, reasoned and tested in sequence.
 - **The real Supabase project, through the app.** The migration was rehearsed on that project first (a full generate-and-scan with its real employee and administrator rows, inside a transaction that was rolled back, nothing kept) and then applied on 2026-11-12. Nobody has yet signed in to the real app and generated a code there: that needs the real office location and network (see Operations).

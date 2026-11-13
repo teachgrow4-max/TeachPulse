@@ -10,7 +10,7 @@ Employees mark attendance only after the server verifies they are physically at 
 
 ```
 apps/api         Express 5 + TypeScript REST API
-apps/web         Vite + React + Tailwind web app (so far: sign-in, profile with QR code, QR scanner, QR management)
+apps/web         Vite + React + Tailwind web app (so far: sign-in, profile, the employee's own attendance QR, the QR scanner, dashboard, QR management, scan history)
 packages/shared  Zod schemas, enums and error codes shared by api / web / mobile
 supabase/        Migrations (schema, RLS, engine functions) and local stack config
 docs/            Architecture, plan, auth guide, database reference, phase reports
